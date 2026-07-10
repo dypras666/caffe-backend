@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cafe Azzura - Platform Multi-Tenant Cafe</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+        .logo { text-align: center; margin-bottom: 40px; }
+        .logo h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .logo p { color: #a0a0a0; margin-top: 10px; }
+        
+        /* Form */
+        .form-box {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 30px;
+        }
+        .form-box h3 { margin-bottom: 20px; text-align: center; }
+        
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: #a0a0a0;
+            font-size: 0.9rem;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 1rem;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        .form-group small { color: #666; font-size: 0.8rem; }
+        
+        /* Slug input with availability check */
+        .slug-wrapper { position: relative; }
+        .slug-wrapper input { padding-right: 100px; }
+        .slug-suffix {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #666;
+            font-size: 0.85rem;
+            pointer-events: none;
+        }
+        .slug-status {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.85rem;
+        }
+        .slug-available { color: #4ade80; }
+        .slug-taken { color: #ff6b6b; }
+        .slug-checking { color: #fbbf24; }
+        
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn:hover:not(:disabled) { transform: scale(1.02); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .error { color: #ff6b6b; font-size: 0.85rem; margin-top: 5px; text-align: center; }
+        
+        /* Provisioning screen */
+        .provisioning {
+            display: none;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .provisioning h3 { color: #e94560; margin-bottom: 10px; }
+        .provisioning p { color: #a0a0a0; margin-bottom: 20px; }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            width: 0%;
+            transition: width 0.5s;
+        }
+        
+        /* Success screen */
+        .success-box {
+            display: none;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .success-box .icon { font-size: 4rem; margin-bottom: 20px; }
+        .success-box h2 { color: #4ade80; margin-bottom: 10px; }
+        .success-box p { color: #a0a0a0; margin-bottom: 20px; }
+        .credentials {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: left;
+            margin-bottom: 20px;
+        }
+        .credentials h4 { margin-bottom: 15px; color: #e94560; }
+        .credentials p { margin: 8px 0; font-size: 0.95rem; }
+        .credentials span { color: #4ade80; font-family: monospace; }
+        .btn-group { display: flex; gap: 10px; }
+        .btn-group .btn { flex: 1; }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .features { margin-top: 40px; text-align: center; }
+        .features h4 { color: #a0a0a0; margin-bottom: 15px; }
+        .feature-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; }
+        .feature-item {
+            background: rgba(255,255,255,0.03);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: #888;
+        }
+        
+        /* Tabs */
+        .tabs { display: flex; margin-bottom: 20px; }
+        .tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            background: transparent;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active { color: #e94560; border-bottom-color: #e94560; }
+        
+        /* Status page */
+        .status-box {
+            display: none;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 30px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-active { background: #4ade80; }
+        .status-pending { background: #fbbf24; animation: pulse 1.5s infinite; }
+        .status-failed { background: #ff6b6b; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>Cafe Azzura</h1>
+            <p>Platform Multi-Tenant untuk Bisnis Cafe</p>
+        </div>
+
+        <!-- Register Form -->
+        <div class="form-box" id="registerForm">
+            <h3>🚀 Buat Tenant Baru</h3>
+            <form id="form">
+                <div class="form-group">
+                    <label>Nama Cafe</label>
+                    <input type="text" name="name" placeholder="Contoh: Cafe Nusantara" required>
+                </div>
+                <div class="form-group">
+                    <label>Subdomain</label>
+                    <div class="slug-wrapper">
+                        <input type="text" name="slug" placeholder="nusantara" pattern="[a-z0-9-]+" required>
+                        <span class="slug-suffix">.caffe.my.id</span>
+                        <span class="slug-status" id="slugStatus"></span>
+                    </div>
+                    <small>Pilih subdomain unik untuk cafe Anda</small>
+                </div>
+                <div class="form-group">
+                    <label>Email Admin</label>
+                    <input type="email" name="email" placeholder="admin@cafe.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Password Admin</label>
+                    <input type="password" name="password" placeholder="Min 8 karakter" minlength="8" required>
+                </div>
+                <div class="form-group">
+                    <label>No. WhatsApp (opsional)</label>
+                    <input type="tel" name="phone" placeholder="08xxxxxxxxxx">
+                </div>
+                <div id="formError" class="error"></div>
+                <button type="submit" class="btn" id="submitBtn">Buat Tenant Sekarang</button>
+            </form>
+            
+            <div class="features">
+                <h4>Fitur Tersedia</h4>
+                <div class="feature-list">
+                    <span class="feature-item">💰 Kasir Modern</span>
+                    <span class="feature-item">📦 Inventory</span>
+                    <span class="feature-item">📊 Laporan</span>
+                    <span class="feature-item">👥 Multi-User</span>
+                    <span class="feature-item">📱 QR Menu</span>
+                    <span class="feature-item">🎯 Loyalty</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Provisioning Screen -->
+        <div class="provisioning" id="provisioning">
+            <div class="spinner"></div>
+            <h3>Sedang Menyiapkan Tenant...</h3>
+            <p id="provisionMsg">Membangun container Docker...</p>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p style="color:#666;font-size:0.85rem;">Ini membutuhkan waktu 3-5 menit</p>
+        </div>
+
+        <!-- Success Screen -->
+        <div class="success-box" id="successBox">
+            <div class="icon">🎉</div>
+            <h2>Tenant Berhasil Dibuat!</h2>
+            <p>Tenant Anda sudah siap digunakan</p>
+            
+            <div class="credentials">
+                <h4>🔐 Credential Login</h4>
+                <p>URL: <span id="credUrl"></span></p>
+                <p>Email: <span id="credEmail"></span></p>
+                <p>Password: <span id="credPassword"></span></p>
+            </div>
+            
+            <div class="btn-group">
+                <a href="" class="btn" id="openApp">Buka Aplikasi</a>
+                <button class="btn btn-secondary" id="restartBtn">🔄 Restart</button>
+            </div>
+            
+            <p style="margin-top:20px;color:#666;font-size:0.85rem;">
+                Simpan credential di atas. Password tidak bisa diambil lagi.
+            </p>
+        </div>
+
+        <!-- Status Check -->
+        <div class="status-box" id="statusBox">
+            <h3>📦 Cek Status Tenant</h3>
+            <form id="statusForm" style="margin-top:20px;">
+                <div class="form-group">
+                    <label>Tenant ID</label>
+                    <input type="text" name="tenantId" placeholder="Masukkan ID tenant" required>
+                </div>
+                <button type="submit" class="btn">Cek Status</button>
+            </form>
+            <div id="statusResult" style="margin-top:20px;"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('form');
+        const slugInput = document.querySelector('input[name="slug"]');
+        const slugStatus = document.getElementById('slugStatus');
+        const nameInput = document.querySelector('input[name="name"]');
+        const submitBtn = document.getElementById('submitBtn');
+        const formError = document.getElementById('formError');
+        const registerForm = document.getElementById('registerForm');
+        const provisioning = document.getElementById('provisioning');
+        const successBox = document.getElementById('successBox');
+        
+        // Auto-generate slug from name
+        nameInput.addEventListener('input', function() {
+            const slug = this.value.toLowerCase()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .replace(/\s+/g, '-')
+                .replace(/-+/g, '-')
+                .substring(0, 30);
+            slugInput.value = slug;
+            checkSlug();
+        });
+        
+        slugInput.addEventListener('input', function() {
+            this.value = this.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            checkSlug();
+        });
+        
+        // Check slug availability
+        let checkTimeout;
+        function checkSlug() {
+            const slug = slugInput.value.trim();
+            if (slug.length < 3) {
+                slugStatus.textContent = '';
+                return;
+            }
+            
+            slugStatus.textContent = '...';
+            slugStatus.className = 'slug-status slug-checking';
+            
+            clearTimeout(checkTimeout);
+            checkTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/register/check/${slug}`);
+                    const data = await res.json();
+                    
+                    if (!data.available) {
+                        slugStatus.textContent = '❌';
+                        slugStatus.className = 'slug-status slug-taken';
+                    } else {
+                        slugStatus.textContent = '✓';
+                        slugStatus.className = 'slug-status slug-available';
+                    }
+                } catch (e) {
+                    slugStatus.textContent = '';
+                }
+            }, 500);
+        }
+        
+        // Submit form
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const slug = slugInput.value.trim();
+            if (slug.length < 3) {
+                formError.textContent = 'Slug minimal 3 karakter';
+                return;
+            }
+            
+            // Check availability first
+            const checkRes = await fetch(`/api/register/check/${slug}`);
+            const checkData = await checkRes.json();
+            if (!checkData.available) {
+                formError.textContent = 'Slug sudah digunakan';
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Membuat...';
+            formError.textContent = '';
+            
+            const formData = {
+                name: form.name.value,
+                slug: slug,
+                email: form.email.value,
+                password: form.password.value,
+                phone: form.phone.value
+            };
+            
+            try {
+                const res = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    registerForm.style.display = 'none';
+                    provisioning.style.display = 'block';
+                    
+                    // Poll for status
+                    pollProvisioning(data.tenant.id);
+                } else {
+                    formError.textContent = data.error || 'Terjadi kesalahan';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Buat Tenant Sekarang';
+                }
+            } catch (err) {
+                formError.textContent = 'Gagal terhubung ke server';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Buat Tenant Sekarang';
+            }
+        });
+        
+        // Poll provisioning status
+        async function pollProvisioning(tenantId) {
+            const steps = [
+                { progress: 20, msg: 'Mempersiapkan environment...' },
+                { progress: 40, msg: 'Membangun container Docker...' },
+                { progress: 60, msg: 'Install dependencies...' },
+                { progress: 80, msg: 'Konfigurasi domain...' },
+                { progress: 95, msg: 'Finalisasi...' }
+            ];
+            
+            let stepIndex = 0;
+            const progressFill = document.getElementById('progressFill');
+            const provisionMsg = document.getElementById('provisionMsg');
+            
+            const interval = setInterval(async () => {
+                if (stepIndex < steps.length) {
+                    progressFill.style.width = steps[stepIndex].progress + '%';
+                    provisionMsg.textContent = steps[stepIndex].msg;
+                    stepIndex++;
+                }
+                
+                try {
+                    const res = await fetch(`/api/tenant/${tenantId}/status`);
+                    const data = await res.json();
+                    
+                    if (data.provision_status === 'completed') {
+                        clearInterval(interval);
+                        progressFill.style.width = '100%';
+                        provisionMsg.textContent = 'Selesai!';
+                        
+                        setTimeout(() => {
+                            provisioning.style.display = 'none';
+                            successBox.style.display = 'block';
+                            
+                            document.getElementById('credUrl').textContent = data.admin_url || `https://${data.slug}.caffe.my.id/admin`;
+                            document.getElementById('credEmail').textContent = data.email;
+                            document.getElementById('credPassword').textContent = 'Password yang Anda buat';
+                            document.getElementById('openApp').href = data.admin_url || `https://${data.slug}.caffe.my.id/admin`;
+                            
+                            // Store for restart
+                            window.currentTenantId = tenantId;
+                        }, 500);
+                        
+                    } else if (data.provision_status === 'failed') {
+                        clearInterval(interval);
+                        provisioning.innerHTML = `
+                            <div style="font-size:4rem;margin-bottom:20px;">❌</div>
+                            <h3 style="color:#ff6b6b;">Provisioning Gagal</h3>
+                            <p>Silakan coba lagi atau hubungi support</p>
+                            <button class="btn" onclick="location.reload()" style="margin-top:20px;">Coba Lagi</button>
+                        `;
+                    }
+                } catch (e) {
+                    console.error('Poll error:', e);
+                }
+            }, 3000);
+        }
+        
+        // Restart button
+        document.getElementById('restartBtn').addEventListener('click', async function() {
+            if (!window.currentTenantId) return;
+            
+            this.disabled = true;
+            this.textContent = 'Merestart...';
+            
+            try {
+                const res = await fetch(`/api/tenant/${window.currentTenantId}/restart`, { method: 'POST' });
+                if (res.ok) {
+                    alert('Container direstart!');
+                } else {
+                    alert('Gagal restart');
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+            
+            this.disabled = false;
+            this.textContent = '🔄 Restart';
+        });
+    </script>
+</body>
+</html>

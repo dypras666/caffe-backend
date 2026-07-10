@@ -1,0 +1,53 @@
+{
+  "name": "cafe-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "jest --forceExit --runInBand",
+    "test:watch": "jest --watch --forceExit --runInBand",
+    "test:coverage": "jest --coverage --forceExit --runInBand",
+    "test:auth": "jest --forceExit --runInBand --testPathPatterns auth.test",
+    "test:security": "jest --forceExit --runInBand --testPathPatterns security.test",
+    "test:rbac": "jest --forceExit --runInBand --testPathPatterns rbac.test",
+    "test:orders": "jest --forceExit --runInBand --testPathPatterns orders.test",
+    "test:settings": "jest --forceExit --runInBand --testPathPatterns settings.test",
+    "test:users": "jest --forceExit --runInBand --testPathPatterns users.test",
+    "migrate": "node database/migrate.js",
+    "seed": "node database/seeds.js",
+    "setup": "node database/migrate.js && node database/seeds.js",
+    "stress": "artillery run __tests__/stress.yml",
+    "stress:quick": "artillery quick --count 50 --num 5 http://localhost:3002/api/health"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1081.0",
+    "@aws-sdk/lib-storage": "^3.1081.0",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "csurf": "^1.11.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "express-session": "^1.19.0",
+    "express-validator": "^7.3.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0",
+    "mysql2": "^3.22.5",
+    "node-ssh": "^13.2.1",
+    "axios": "^1.7.2",
+    "uuid": "^10.0.0",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "artillery": "^2.0.21",
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
+  }
+}

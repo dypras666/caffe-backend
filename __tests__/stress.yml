@@ -1,0 +1,117 @@
+config:
+  target: "http://localhost:3002"
+  phases:
+    # Warm-up phase
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm-up"
+    # Ramp-up phase
+    - duration: 60
+      arrivalRate: 5
+      rampTo: 50
+      name: "Ramp up"
+    # Sustained load
+    - duration: 60
+      arrivalRate: 50
+      name: "Sustained load"
+    # Spike test
+    - duration: 15
+      arrivalRate: 200
+      name: "Spike"
+    # Recovery
+    - duration: 30
+      arrivalRate: 10
+      name: "Recovery"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  # --- Public browsing (weight 60%) ---
+  - name: "Public - Browse Menu"
+    weight: 40
+    flow:
+      - get:
+          url: "/api/health"
+      - think: 1
+      - get:
+          url: "/api/products"
+      - think: 1
+      - get:
+          url: "/api/products?popular=true"
+      - think: 1
+      - get:
+          url: "/api/products?category=1"
+      - think: 1
+      - get:
+          url: "/api/settings"
+
+  - name: "Public - Read Product Detail"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/products/1"
+      - think: 1
+      - get:
+          url: "/api/products/2"
+
+  # --- Auth flow (weight 20%) ---
+  - name: "Auth - Login"
+    weight: 10
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "admin@cafeazzura.com"
+            password: "admin123"
+          capture:
+            - json: "$.token"
+              as: "token"
+      - think: 1
+      - get:
+          url: "/api/auth/me"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  # --- Booking flow (weight 15%) ---
+  - name: "Public - Submit Booking"
+    weight: 15
+    flow:
+      - post:
+          url: "/api/bookings"
+          json:
+            name: "Stress Test User"
+            email: "stress{{ $randomNumber(1,9999) }}@test.com"
+            phone: "+6281234567"
+            booking_date: "2026-12-15"
+            booking_time: "19:00"
+            guests: 2
+            special_request: "Window seat"
+          expect:
+            - statusCode: 201
+
+  # --- Dashboard (weight 15%) ---
+  - name: "Auth - Dashboard Stats"
+    weight: 15
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "admin@cafeazzura.com"
+            password: "admin123"
+          capture:
+            - json: "$.token"
+              as: "token"
+      - get:
+          url: "/api/dashboard/stats"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      - think: 2
+      - get:
+          url: "/api/orders"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      - get:
+          url: "/api/categories"
