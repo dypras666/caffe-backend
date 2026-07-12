@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log*
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+__tests__
+tests
+coverage
+*.test.js
+README.md
+vps.md
+deploy.sh
+update-caddy.sh
+uploads/*

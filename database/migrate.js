@@ -712,6 +712,13 @@ const MIGRATIONS = [
     `,
   },
   {
+    id: '031_remove_storage_settings',
+    sql: `
+      DELETE FROM system_settings
+      WHERE setting_key LIKE 'storage_%';
+    `,
+  },
+  {
     id: '030_feature_flags_public',
     sql: `
       UPDATE system_settings

@@ -77,17 +77,8 @@ async function ensureTables() {
         ('wifi_password_length', '8', 'number', 'integrations', 'Panjang Password WiFi', 'Jumlah karakter password', 52)
     `);
 
-    await db.query(`
-      INSERT IGNORE INTO system_settings (setting_key, setting_value, setting_type, setting_group, label, description, display_order)
-      VALUES
-        ('storage_driver', 'local', 'select', 'storage', 'Storage Driver', 'Penyimpanan file (local/s3)', 100),
-        ('storage_s3_key', '', 'password', 'storage', 'S3 Access Key ID', 'AWS S3 Access Key ID', 101),
-        ('storage_s3_secret', '', 'password', 'storage', 'S3 Secret Access Key', 'AWS S3 Secret Access Key', 102),
-        ('storage_s3_bucket', 'uploads', 'text', 'storage', 'S3 Bucket', 'Nama bucket S3', 103),
-        ('storage_s3_region', 'us-east-1', 'text', 'storage', 'S3 Region', 'Region AWS S3', 104),
-        ('storage_s3_endpoint', '', 'text', 'storage', 'S3 Endpoint (Optional)', 'Custom endpoint untuk S3-compatible (MinIO, etc)', 105),
-        ('storage_s3_url', '', 'text', 'storage', 'S3 Public URL (Optional)', 'Base URL untuk akses publik file S3', 106)
-    `);
+    // Storage config removed from DB — managed via .env (STORAGE_DRIVER, STORAGE_S3_*)
+    await db.query("DELETE FROM system_settings WHERE setting_key LIKE 'storage_%'");
 
     await db.query(`
       INSERT IGNORE INTO external_integrations (name, slug, description, provider, config, status, trigger_events, run_order)

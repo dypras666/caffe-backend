@@ -4,50 +4,41 @@ const sharp = require('sharp');
 
 class StorageService {
   constructor() {
-    this.driver = 'local';
-    this.s3Client = null;
-    this.s3Bucket = null;
-    this.s3BaseUrl = null;
     this.localBasePath = path.join(__dirname, '..', 'uploads');
-    this.loadConfig();
+    this._init();
   }
 
-  async loadConfig() {
-    try {
-      const db = require('../config/database');
-      const [rows] = await db.query(
-        "SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'storage_%'"
-      );
-      const config = {};
-      for (const row of rows) config[row.setting_key] = row.setting_value;
+  _init() {
+    // Config exclusively from env — never from DB
+    this.driver = (process.env.STORAGE_DRIVER || 'local').toLowerCase();
 
-      this.driver = config.storage_driver || 'local';
-
-      if (this.driver === 's3') {
-        const { S3Client } = require('@aws-sdk/client-s3');
-        this.s3Client = new S3Client({
-          region: config.storage_s3_region || 'us-east-1',
-          endpoint: config.storage_s3_endpoint || undefined,
-          credentials: {
-            accessKeyId: config.storage_s3_key || '',
-            secretAccessKey: config.storage_s3_secret || '',
-          },
-          forcePathStyle: config.storage_s3_endpoint ? true : undefined,
-        });
-        this.s3Bucket = config.storage_s3_bucket || 'uploads';
-        this.s3BaseUrl = config.storage_s3_url || '';
+    if (this.driver === 's3') {
+      const { S3Client } = require('@aws-sdk/client-s3');
+      this.s3Client = new S3Client({
+        region: process.env.STORAGE_S3_REGION || 'us-east-1',
+        endpoint: process.env.STORAGE_S3_ENDPOINT || undefined,
+        credentials: {
+          accessKeyId: process.env.STORAGE_S3_KEY || '',
+          secretAccessKey: process.env.STORAGE_S3_SECRET || '',
+        },
+        forcePathStyle: !!process.env.STORAGE_S3_ENDPOINT,
+      });
+      this.s3Bucket = process.env.STORAGE_S3_BUCKET || 'uploads';
+      this.s3BaseUrl = process.env.STORAGE_S3_URL || '';
+    } else {
+      this.s3Client = null;
+      this.s3Bucket = null;
+      this.s3BaseUrl = null;
+      if (!fs.existsSync(this.localBasePath)) {
+        fs.mkdirSync(this.localBasePath, { recursive: true });
       }
-
-      if (this.driver === 'local') {
-        if (!fs.existsSync(this.localBasePath)) {
-          fs.mkdirSync(this.localBasePath, { recursive: true });
-        }
-      }
-    } catch { /* defaults */ }
+    }
   }
+
+  // kept for backward compat — now a no-op
+  async loadConfig() {}
 
   async save(filename, buffer, contentType) {
-    await this.loadConfig();
 
     if (this.driver === 's3') {
       return this.saveS3(filename, buffer, contentType);

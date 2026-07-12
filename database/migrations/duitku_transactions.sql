@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS duitku_transactions (
+  id              INT AUTO_INCREMENT PRIMARY KEY,
+  merchant_order_id VARCHAR(100) NOT NULL UNIQUE,
+  order_id        INT NULL,
+  payment_method  VARCHAR(20) NULL,
+  amount          BIGINT NOT NULL,
+  product_details VARCHAR(255) NULL,
+  email           VARCHAR(255) NULL,
+  status          ENUM('PENDING','SUCCESS','FAILED','UNKNOWN') NOT NULL DEFAULT 'PENDING',
+  reference       VARCHAR(100) NULL,
+  payment_url     TEXT NULL,
+  va_number       VARCHAR(100) NULL,
+  qr_string       TEXT NULL,
+  raw_response    JSON NULL,
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_order_id (order_id),
+  INDEX idx_status (status),
+  INDEX idx_created (created_at)
+);
