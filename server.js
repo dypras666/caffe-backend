@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const mysql = require('mysql2/promise');
 const path = require('path');
 const fs = require('fs');
@@ -67,6 +68,8 @@ async function initDB() {
       id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100),
       email VARCHAR(100) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL,
       role VARCHAR(20) DEFAULT 'cashier',
+      reset_token VARCHAR(255) NULL,
+      reset_token_exp DATETIME NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
     await conn.execute(`CREATE TABLE IF NOT EXISTS orders (
@@ -96,6 +99,14 @@ async function initDB() {
     )`);
     conn.release();
     console.log('Tables auto-created');
+
+    // Ensure existing tenants have reset_token columns
+    try {
+      await db.execute("ALTER TABLE users ADD COLUMN reset_token VARCHAR(255) NULL AFTER role");
+    } catch (e) { /* already exists */ }
+    try {
+      await db.execute("ALTER TABLE users ADD COLUMN reset_token_exp DATETIME NULL AFTER reset_token");
+    } catch (e) { /* already exists */ }
 
     // Seed default settings (ignore if already exist)
     try {
@@ -145,6 +156,48 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (e) {
     console.error('Login error:', e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── FORGOT / RESET PASSWORD ────────────────────────────────────
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email wajib diisi' });
+
+    const [users] = await db.query('SELECT id, email FROM users WHERE email = ? AND role = ?', [email, 'admin']);
+    if (!users.length) return res.json({ success: true });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000);
+    await db.query('UPDATE users SET reset_token = ?, reset_token_exp = ? WHERE email = ?', [token, expires, email]);
+
+    console.log(`[Auth] Forgot password for ${email}: token=${token.substring(0, 12)}...`);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Forgot password error:', e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ error: 'Token dan password wajib diisi' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password minimal 8 karakter' });
+
+    const [users] = await db.query(
+      'SELECT id FROM users WHERE reset_token = ? AND reset_token_exp > NOW() AND role = ?',
+      [token, 'admin']
+    );
+    if (!users.length) return res.status(400).json({ error: 'Token tidak valid atau kadaluarsa' });
+
+    const hashed = await bcrypt.hash(password, 10);
+    await db.query('UPDATE users SET password = ?, reset_token = NULL, reset_token_exp = NULL WHERE id = ?', [hashed, users[0].id]);
+    res.json({ success: true, message: 'Password berhasil direset' });
+  } catch (e) {
+    console.error('Reset password error:', e);
     res.status(500).json({ error: 'Server error' });
   }
 });
