@@ -43,14 +43,14 @@ router.get('/', async (req, res) => {
       }
     }
 
-    let query = 'SELECT id, setting_key, setting_value, setting_type, setting_group, label, description, display_order, is_public FROM system_settings';
+    let query = 'SELECT id, setting_key, setting_value, setting_type, setting_group, label, description, is_public FROM system_settings';
     const params = [];
 
     if (!isAdmin) {
       query += ' WHERE is_public = 1';
     }
 
-    query += ' ORDER BY setting_group, display_order';
+    query += ' ORDER BY setting_group, setting_key';
 
     const [settings] = await db.query(query, params);
 

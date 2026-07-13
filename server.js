@@ -52,9 +52,12 @@ async function initDB() {
       image_url VARCHAR(500), is_active TINYINT DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
-    await conn.execute(`CREATE TABLE IF NOT EXISTS settings (
+    await conn.execute(`CREATE TABLE IF NOT EXISTS system_settings (
       id INT AUTO_INCREMENT PRIMARY KEY, setting_key VARCHAR(100) UNIQUE NOT NULL,
-      setting_value TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      setting_value TEXT, setting_type VARCHAR(20) DEFAULT 'text',
+      setting_group VARCHAR(100), label VARCHAR(255),
+      description TEXT, is_public TINYINT DEFAULT 0,
+      sort_order INT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
     await conn.execute(`CREATE TABLE IF NOT EXISTS tables (
       id INT AUTO_INCREMENT PRIMARY KEY, number INT NOT NULL UNIQUE,
