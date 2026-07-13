@@ -66,8 +66,13 @@ async function initDB() {
     )`);
     await conn.execute(`CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100),
-      email VARCHAR(100) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL,
+      email VARCHAR(100) UNIQUE NOT NULL, phone VARCHAR(50),
+      password VARCHAR(255) NOT NULL,
       role VARCHAR(20) DEFAULT 'cashier',
+      status VARCHAR(20) DEFAULT 'active',
+      balance DECIMAL(15,2) DEFAULT 0,
+      is_priority TINYINT DEFAULT 0,
+      branch_id INT DEFAULT NULL,
       reset_token VARCHAR(255) NULL,
       reset_token_exp DATETIME NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -76,6 +81,10 @@ async function initDB() {
       id INT AUTO_INCREMENT PRIMARY KEY, table_id INT,
       customer_name VARCHAR(100), total_amount DECIMAL(10,0) DEFAULT 0,
       status VARCHAR(20) DEFAULT 'pending', payment_method VARCHAR(20),
+      shift_id INT DEFAULT NULL,
+      payment_status VARCHAR(20) DEFAULT 'pending',
+      order_status VARCHAR(20) DEFAULT 'open',
+      total DECIMAL(15,2) DEFAULT 0,
       notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
     await conn.execute(`CREATE TABLE IF NOT EXISTS order_items (
@@ -97,12 +106,113 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (member_id) REFERENCES members(id)
     )`);
+
+    await conn.execute(`CREATE TABLE IF NOT EXISTS rooms (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      name VARCHAR(100) NOT NULL,
+      description TEXT,
+      capacity INT DEFAULT 0,
+      image VARCHAR(255),
+      is_active TINYINT(1) DEFAULT 1,
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`);
+
+    await conn.execute(`CREATE TABLE IF NOT EXISTS shifts (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      user_id INT NOT NULL,
+      branch_id INT DEFAULT 1,
+      shift_date DATE NOT NULL,
+      start_time TIME NOT NULL,
+      end_time TIME NOT NULL,
+      status VARCHAR(20) DEFAULT 'open',
+      opened_by INT DEFAULT NULL,
+      closed_by INT DEFAULT NULL,
+      opened_at TIMESTAMP NULL DEFAULT NULL,
+      closed_at TIMESTAMP NULL DEFAULT NULL,
+      cash_start DECIMAL(15,2) DEFAULT 0,
+      cash_end DECIMAL(15,2) DEFAULT 0,
+      cash_difference DECIMAL(15,2) DEFAULT 0,
+      opening_cash DECIMAL(15,2) DEFAULT 0,
+      closing_cash DECIMAL(15,2) DEFAULT 0,
+      notes TEXT,
+      total_orders INT DEFAULT 0,
+      total_revenue DECIMAL(15,2) DEFAULT 0,
+      cash_revenue DECIMAL(15,2) DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`);
+
+    await conn.execute(`CREATE TABLE IF NOT EXISTS payment_methods (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      name VARCHAR(100) NOT NULL,
+      code VARCHAR(50) NOT NULL UNIQUE,
+      type ENUM('cash','digital','transfer','wallet') NOT NULL DEFAULT 'cash',
+      account_number VARCHAR(50),
+      account_name VARCHAR(100),
+      icon VARCHAR(255),
+      description TEXT,
+      is_active TINYINT(1) DEFAULT 1,
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`);
+    await conn.execute(`INSERT IGNORE INTO payment_methods (name, code, type, sort_order) VALUES
+      ('Tunai', 'cash', 'cash', 1),
+      ('QRIS', 'qris', 'digital', 2),
+      ('Transfer Bank', 'bank_transfer', 'transfer', 3)`);
+
+    await conn.execute(`CREATE TABLE IF NOT EXISTS activity_logs (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      user_id INT,
+      user_email VARCHAR(100),
+      user_name VARCHAR(100),
+      action VARCHAR(100) NOT NULL,
+      entity_type VARCHAR(50),
+      entity_id INT,
+      details TEXT,
+      ip_address VARCHAR(45),
+      user_agent VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`);
+
+    await conn.execute(`CREATE TABLE IF NOT EXISTS sessions (
+      id VARCHAR(128) PRIMARY KEY,
+      user_id INT NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`);
+
     conn.release();
     console.log('Tables auto-created');
+
+    // Auto-add missing columns to existing tables
+    const autoAlter = async (table, col, def) => {
+      try {
+        await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+      } catch (e) { /* already exists */ }
+    };
+    await autoAlter('users', 'status', "VARCHAR(20) DEFAULT 'active'");
+    await autoAlter('users', 'balance', 'DECIMAL(15,2) DEFAULT 0');
+    await autoAlter('users', 'is_priority', 'TINYINT DEFAULT 0');
+    await autoAlter('users', 'branch_id', 'INT DEFAULT NULL');
+    await autoAlter('tables', 'is_active', 'TINYINT(1) DEFAULT 1');
+    await autoAlter('tables', 'room_id', 'INT DEFAULT NULL');
+    await autoAlter('tables', 'sort_order', 'INT DEFAULT 0');
+    await autoAlter('tables', 'branch_id', 'INT DEFAULT 1');
+    await autoAlter('tables', 'maintenance_note', 'VARCHAR(255) DEFAULT NULL');
+    await autoAlter('tables', 'manual_close', 'TINYINT(1) DEFAULT 0');
+    await autoAlter('tables', 'auto_free_at', 'TIMESTAMP NULL');
+    await autoAlter('orders', 'shift_id', 'INT DEFAULT NULL');
+    await autoAlter('orders', 'payment_status', "VARCHAR(20) DEFAULT 'pending'");
+    await autoAlter('orders', 'order_status', "VARCHAR(20) DEFAULT 'open'");
+    await autoAlter('orders', 'total', 'DECIMAL(15,2) DEFAULT 0');
+    // Sync total = total_amount for existing orders
+    try { await db.execute('UPDATE orders SET total = total_amount WHERE total = 0 OR total IS NULL'); } catch(e) {}
 
     // Ensure existing tenants have reset_token columns
     try {
       await db.execute("ALTER TABLE users ADD COLUMN reset_token VARCHAR(255) NULL AFTER role");
+      await db.execute("ALTER TABLE users ADD COLUMN reset_token_exp DATETIME NULL AFTER reset_token");
     } catch (e) { /* already exists */ }
     try {
       await db.execute("ALTER TABLE users ADD COLUMN reset_token_exp DATETIME NULL AFTER reset_token");
