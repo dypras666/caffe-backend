@@ -96,6 +96,15 @@ async function initDB() {
     )`);
     conn.release();
     console.log('Tables auto-created');
+
+    // Seed default settings (ignore if already exist)
+    try {
+      const [exist] = await db.execute("SELECT 1 FROM system_settings WHERE setting_key = 'cafe_name'");
+      if (!exist || !exist.length) {
+        await db.execute("INSERT INTO system_settings (setting_key, setting_value, setting_type, setting_group, label, is_public, sort_order) VALUES ('cafe_name', ?, 'text', 'general', 'Nama Cafe', 1, 1)", [process.env.TENANT_NAME || 'Cafe']);
+        await db.execute("INSERT INTO system_settings (setting_key, setting_value, setting_type, setting_group, label, is_public, sort_order) VALUES ('cafe_address', '', 'text', 'general', 'Alamat Cafe', 1, 2)");
+      }
+    } catch (e) { /* non-fatal seed */ }
   } catch (e) { console.error('Table init error (non-fatal):', e.message); }
   console.log('Database connected');
 }
@@ -173,8 +182,8 @@ app.delete('/api/users/:id', authenticate, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── DASHBOARD ──────────────────────────────────────────────────
-app.get('/api/dashboard/stats', authenticate, async (req, res) => {
+// ─── DASHBOARD (public stats for gallery page) ──────────────────
+app.get('/api/dashboard/stats', async (req, res) => {
   try {
     const [[{ orders }]] = await db.query("SELECT COUNT(*) as orders FROM orders WHERE DATE(created_at) = CURDATE()");
     const [[{ tables }]] = await db.query("SELECT COUNT(*) as tables FROM tables");
