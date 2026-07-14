@@ -5,6 +5,7 @@ const db = require('../config/database');
 const { authenticate, authorize, can } = require('../middleware/auth');
 const { sanitizeInput } = require('../middleware/security');
 const { triggerOrderEvent } = require('../services/integrations');
+const { sendOrderNotification, clearBadgeForUser } = require('../services/pushNotification');
 
 // Valid order status transitions
 const ORDER_STATUS_TRANSITIONS = {
@@ -602,6 +603,15 @@ router.post('/',
 
       await logActivity(req.user.id, 'create_order', orderId, null, { order_number: orderNumber, total });
 
+      // Send push notification to kasir/admin devices
+      sendOrderNotification({
+        id: orderId,
+        order_number: orderNumber,
+        order_type,
+        table_number: resolvedTableNumber,
+        total,
+      }).catch(() => {});
+
       res.status(201).json({
         message: 'Order created successfully',
         order: {
@@ -671,6 +681,11 @@ router.put('/:id/status',
       }
 
       await db.query('UPDATE orders SET order_status = ? WHERE id = ?', [newStatus, orderId]);
+
+      // Clear push notification badge when kasir starts processing order (pending → *)
+      if (order.order_status === 'pending') {
+        clearBadgeForUser(req.user.id).catch(() => {});
+      }
 
       // Free table when order completed or cancelled
       if (newStatus === 'completed' || newStatus === 'cancelled') {

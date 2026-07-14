@@ -697,6 +697,9 @@ routeNames.forEach(name => {
   }
 });
 
+// ─── PUSH TOKENS ──────────────────────────────────────────────
+app.use('/api/push-tokens', require('./routes/pushTokens'));
+
 // ─── DUITKU ───────────────────────────────────────────────────
 const duitkuRoutes = require('./routes/duitku');
 app.use('/api/duitku', duitkuRoutes);
