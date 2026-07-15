@@ -20,12 +20,22 @@ router.get('/', authenticate, async (req, res) => {
          WHERE o.table_id = t.id
            AND o.order_status NOT IN ('completed','cancelled')
            AND o.payment_status = 'pending'
-         ORDER BY o.created_at DESC LIMIT 1) AS unpaid_order_number,
+         ORDER BY o.created_at ASC LIMIT 1) AS unpaid_order_number,
         (SELECT o.total FROM orders o
          WHERE o.table_id = t.id
            AND o.order_status NOT IN ('completed','cancelled')
            AND o.payment_status = 'pending'
-         ORDER BY o.created_at DESC LIMIT 1) AS unpaid_total
+         ORDER BY o.created_at ASC LIMIT 1) AS unpaid_total,
+        (SELECT o.customer_name FROM orders o
+         WHERE o.table_id = t.id
+           AND o.order_status NOT IN ('completed','cancelled')
+           AND o.payment_status = 'pending'
+         ORDER BY o.created_at ASC LIMIT 1) AS unpaid_customer_name,
+        (SELECT o.created_at FROM orders o
+         WHERE o.table_id = t.id
+           AND o.order_status NOT IN ('completed','cancelled')
+           AND o.payment_status = 'pending'
+         ORDER BY o.created_at ASC LIMIT 1) AS occupied_since
       FROM tables t
       LEFT JOIN rooms r ON r.id = t.room_id
       WHERE 1=1
