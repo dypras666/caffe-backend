@@ -137,7 +137,7 @@ router.get('/summary', authenticate, authorize('admin'), async (req, res) => {
       [dateFrom, dateTo, ...expBranchParams]
     );
     const [[cogs]] = await db.query(
-      `SELECT COALESCE(SUM(oi.quantity * oi.product_price), 0) AS total_cogs
+      `SELECT COALESCE(SUM(oi.quantity * oi.unit_price), 0) AS total_cogs
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
        JOIN products p ON p.id = oi.product_id
