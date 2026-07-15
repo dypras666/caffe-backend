@@ -13,7 +13,8 @@ router.get('/methods', async (req, res) => {
       try {
         const jwt = require('jsonwebtoken');
         const decoded = jwt.verify(authHeader.replace('Bearer ', ''), process.env.JWT_SECRET);
-        const [rows] = await db.query('SELECT role FROM users WHERE id = ? AND status = "active"', [decoded.userId]);
+        const userId = decoded.id || decoded.userId;
+        const [rows] = await db.query('SELECT role FROM users WHERE id = ? AND status = "active"', [userId]);
         if (rows.length && ['admin','kasir'].includes(rows[0].role)) isStaff = true;
       } catch {}
     }
