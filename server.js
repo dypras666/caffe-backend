@@ -466,6 +466,8 @@ app.post('/payment/callback/duitku', async (req, res) => {
 const publicDir = path.join(__dirname, 'public');
 app.use('/admin', express.static(path.join(publicDir, 'admin')));
 app.use('/assets', express.static(path.join(publicDir, 'admin/assets')));
+// Cafe Kasir web app
+app.use('/kasir', express.static(path.join(publicDir, 'kasir')));
 app.use(express.static(publicDir));
 
 // SPA fallback — NOT for API paths
@@ -473,10 +475,23 @@ app.get('/{*p}', (req, res) => {
   if (req.path.startsWith('/api')) return res.status(404).json({ error: 'API route not found' });
   if (req.path.startsWith('/admin')) {
     const p = path.join(publicDir, 'admin', 'index.html');
-    if (fs.existsSync(p)) return res.sendFile(p);
+    if (fs.existsSync(p)) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.sendFile(p);
+    }
+  }
+  if (req.path.startsWith('/kasir')) {
+    const p = path.join(publicDir, 'kasir', 'index.html');
+    if (fs.existsSync(p)) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.sendFile(p);
+    }
   }
   const uiIndex = path.join(publicDir, 'ui', 'index.html');
-  if (fs.existsSync(uiIndex)) return res.sendFile(uiIndex);
+  if (fs.existsSync(uiIndex)) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    return res.sendFile(uiIndex);
+  }
   res.status(404).send('Not found');
 });
 
