@@ -116,12 +116,14 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
 router.get('/compatible-units/:id', authenticate, authorize('admin'), async (req, res) => {
   try {
     const [[ing]] = await db.query(
-      'SELECT i.unit_id, u.base_unit_id, u.type FROM ingredients i LEFT JOIN units u ON u.id = i.unit_id WHERE i.id=?',
+      'SELECT i.unit_id, i.unit AS unit_symbol, u.base_unit_id, u.type FROM ingredients i LEFT JOIN units u ON u.id = i.unit_id WHERE i.id=?',
       [req.params.id]
     );
     if (!ing) return res.status(404).json({ error: 'Bahan tidak ditemukan' });
 
     let compatibleUnits;
+    let baseUnitId = ing.base_unit_id || ing.unit_id;
+
     if (ing.base_unit_id) {
       // Has a base unit — get all units with same base
       const [units] = await db.query(
@@ -136,13 +138,31 @@ router.get('/compatible-units/:id', authenticate, authorize('admin'), async (req
         [ing.unit_id, ing.unit_id]
       );
       compatibleUnits = units;
+    } else if (ing.unit_symbol) {
+      // unit_id not linked — try to match by symbol from units table
+      const [[matched]] = await db.query(
+        'SELECT * FROM units WHERE (symbol = ? OR name = ?) AND is_active = 1 LIMIT 1',
+        [ing.unit_symbol, ing.unit_symbol]
+      );
+      if (matched) {
+        // Auto-fix: link unit_id so next call is instant
+        await db.query('UPDATE ingredients SET unit_id = ? WHERE id = ?', [matched.id, req.params.id]).catch(() => {});
+        const rootId = matched.base_unit_id || matched.id;
+        baseUnitId = rootId;
+        const [units] = await db.query(
+          'SELECT * FROM units WHERE (id = ? OR base_unit_id = ?) AND is_active = 1 ORDER BY conversion_factor',
+          [rootId, rootId]
+        );
+        compatibleUnits = units;
+      } else {
+        // Truly unknown unit — return only the ingredient's own unit as a single option
+        compatibleUnits = [{ id: null, name: ing.unit_symbol, symbol: ing.unit_symbol, conversion_factor: 1, base_unit_id: null }];
+      }
     } else {
-      // No unit linked — return all units of same type
-      const [units] = await db.query('SELECT * FROM units WHERE is_active = 1 ORDER BY type, conversion_factor');
-      compatibleUnits = units;
+      compatibleUnits = [];
     }
 
-    res.json({ units: compatibleUnits, base_unit_id: ing.base_unit_id || ing.unit_id });
+    res.json({ units: compatibleUnits, base_unit_id: baseUnitId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
