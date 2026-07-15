@@ -65,9 +65,13 @@ async function loadProductConfig(productId) {
 // GET /api/variants/:productId — full config
 router.get('/:productId', async (req, res) => {
   try {
-    const [[product]] = await db.query('SELECT id, name, price FROM products WHERE id=?', [req.params.productId]);
+    const pid = req.params.productId;
+    if (!pid || pid === 'null' || pid === 'undefined' || isNaN(parseInt(pid))) {
+      return res.json({ product: null, variant_groups: [], addon_groups: [] });
+    }
+    const [[product]] = await db.query('SELECT id, name, price FROM products WHERE id=?', [pid]);
     if (!product) return res.status(404).json({ error: 'Produk tidak ditemukan' });
-    const config = await loadProductConfig(req.params.productId);
+    const config = await loadProductConfig(pid);
     res.json({ product, ...config });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -128,6 +132,9 @@ router.post('/groups/:groupId/options', authenticate, authorize('admin'), async 
 });
 
 router.put('/options/:optionId', authenticate, authorize('admin'), async (req, res) => {
+  const oid = req.params.optionId;
+  if (!oid || oid === 'null' || oid === 'undefined' || isNaN(parseInt(oid)))
+    return res.status(400).json({ error: 'Invalid option id' });
   const { name, price_modifier, is_default, is_active, sort_order,
           ingredient_id, ingredient_qty, ingredient_unit } = req.body;
   const fields = [], vals = [];
@@ -161,8 +168,11 @@ router.put('/options/:optionId', authenticate, authorize('admin'), async (req, r
 });
 
 router.delete('/options/:optionId', authenticate, authorize('admin'), async (req, res) => {
+  const oid = req.params.optionId;
+  if (!oid || oid === 'null' || oid === 'undefined' || isNaN(parseInt(oid)))
+    return res.status(400).json({ error: 'Invalid option id' });
   try {
-    await db.query('DELETE FROM product_variant_options WHERE id=?', [req.params.optionId]);
+    await db.query('DELETE FROM product_variant_options WHERE id=?', [oid]);
     res.json({ message: 'Opsi dihapus' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
