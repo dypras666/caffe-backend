@@ -697,8 +697,8 @@ routeNames.forEach(name => {
   }
 });
 
-// ─── PUSH TOKENS ──────────────────────────────────────────────
-app.use('/api/push-tokens', require('./routes/pushTokens'));
+// ─── MOBILE SYNC ──────────────────────────────────────────────
+app.use('/api/mobile/sync', require('./routes/mobilesync'));
 
 // ─── DUITKU ───────────────────────────────────────────────────
 const duitkuRoutes = require('./routes/duitku');
