@@ -292,15 +292,20 @@ router.post('/:id/units', authenticate, authorize('admin'), async (req, res) => 
   const { unit_name, unit_symbol, conversion_qty, notes, sort_order } = req.body;
   if (!unit_name || !unit_symbol || !conversion_qty)
     return res.status(400).json({ error: 'unit_name, unit_symbol, conversion_qty wajib' });
+  const qty = parseFloat(conversion_qty);
+  if (isNaN(qty) || qty <= 0)
+    return res.status(400).json({ error: 'Nilai konversi harus lebih dari 0' });
+  if (qty === 1)
+    return res.status(400).json({ error: 'Nilai konversi 1 adalah satuan dasar, gunakan nilai lain (mis. 1000 untuk kg jika dasar gram)' });
   try {
     const [r] = await db.query(
       'INSERT INTO ingredient_unit_conversions (ingredient_id, unit_name, unit_symbol, conversion_qty, notes, sort_order) VALUES (?,?,?,?,?,?)',
-      [req.params.id, unit_name, unit_symbol, parseFloat(conversion_qty), notes || null, sort_order || 0]
+      [req.params.id, unit_name, unit_symbol, qty, notes || null, sort_order || 0]
     );
     const [[row]] = await db.query('SELECT * FROM ingredient_unit_conversions WHERE id=?', [r.insertId]);
     res.status(201).json({ conversion: row });
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: `Simbol "${unit_symbol}" sudah ada untuk bahan ini` });
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: `Satuan "${unit_symbol}" sudah ada untuk bahan ini` });
     res.status(500).json({ error: e.message });
   }
 });
@@ -311,7 +316,12 @@ router.put('/units/:convId', authenticate, authorize('admin'), async (req, res) 
   const fields = [], vals = [];
   if (unit_name !== undefined) { fields.push('unit_name=?'); vals.push(unit_name); }
   if (unit_symbol !== undefined) { fields.push('unit_symbol=?'); vals.push(unit_symbol); }
-  if (conversion_qty !== undefined) { fields.push('conversion_qty=?'); vals.push(parseFloat(conversion_qty)); }
+  if (conversion_qty !== undefined) {
+    const qty = parseFloat(conversion_qty);
+    if (isNaN(qty) || qty <= 0) return res.status(400).json({ error: 'Nilai konversi harus lebih dari 0' });
+    if (qty === 1) return res.status(400).json({ error: 'Nilai konversi 1 adalah satuan dasar, gunakan nilai lain' });
+    fields.push('conversion_qty=?'); vals.push(qty);
+  }
   if (notes !== undefined) { fields.push('notes=?'); vals.push(notes); }
   if (sort_order !== undefined) { fields.push('sort_order=?'); vals.push(sort_order); }
   if (is_active !== undefined) { fields.push('is_active=?'); vals.push(is_active ? 1 : 0); }
