@@ -4,7 +4,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
+    "start:shared": "node server.shared.js",
     "dev": "node --watch server.js",
+    "dev:shared": "node --watch server.shared.js",
     "test": "jest --forceExit --runInBand",
     "test:watch": "jest --watch --forceExit --runInBand",
     "test:coverage": "jest --coverage --forceExit --runInBand",
