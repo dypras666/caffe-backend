@@ -57,8 +57,14 @@ async function loadProductConfig(productId) {
   );
 
   return {
-    variant_groups: variantGroups.map(g => ({ ...g, options: g.options ? JSON.parse(g.options) : [] })),
-    addon_groups: addonGroups.map(g => ({ ...g, addons: g.addons ? JSON.parse(g.addons) : [] })),
+    variant_groups: variantGroups.map(g => ({
+      ...g,
+      options: g.options ? JSON.parse(g.options).filter(o => o.id !== null) : [],
+    })),
+    addon_groups: addonGroups.map(g => ({
+      ...g,
+      addons: g.addons ? JSON.parse(g.addons).filter(a => a.id !== null) : [],
+    })),
   };
 }
 
