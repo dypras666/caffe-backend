@@ -46,6 +46,20 @@ router.get('/', optionalAuth, async (req, res) => {
 
     query += ' ORDER BY p.created_at DESC';
 
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = (page - 1) * limit;
+
+    const countQuery = query.replace(
+      'SELECT p.*, c.name as category_name',
+      'SELECT COUNT(*) as total'
+    );
+    const [[{ total }]] = await db.query(countQuery, params);
+
+    query += ' LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
     const [products] = await db.query(query, params);
 
     // Inject has_variants / has_addons flags efficiently in one query
@@ -80,7 +94,17 @@ router.get('/', optionalAuth, async (req, res) => {
       }
     }
 
-    res.json({ products, count: products.length, branch_id });
+    res.json({
+      products,
+      count: products.length,
+      branch_id,
+      pagination: {
+        total,
+        page,
+        limit,
+        total_pages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error('Get products error:', error);
     res.status(500).json({ error: 'Server error' });
