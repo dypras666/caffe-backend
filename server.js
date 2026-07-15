@@ -697,6 +697,18 @@ routeNames.forEach(name => {
   }
 });
 
+// ─── SYSTEM PING (no auth, for LAN discovery) ─────────────────
+app.get('/api/system/ping', async (req, res) => {
+  let cafeName = 'Cafe Kasir';
+  try {
+    const [[row]] = await db.query(
+      "SELECT setting_value FROM system_settings WHERE setting_key='cafe_name' LIMIT 1"
+    );
+    if (row?.setting_value) cafeName = row.setting_value;
+  } catch (_) {}
+  res.json({ ok: true, cafeName, timestamp: new Date().toISOString(), version: '1.0' });
+});
+
 // ─── MOBILE SYNC ──────────────────────────────────────────────
 app.use('/api/mobile/sync', require('./routes/mobilesync'));
 
