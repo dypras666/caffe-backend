@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const [users] = await db.query(
           'SELECT role FROM users WHERE id = ? AND status = "active"',
-          [decoded.userId]
+          [decoded.id || decoded.userId]
         );
         if (users.length > 0 && users[0].role === 'admin') {
           isAdmin = true;

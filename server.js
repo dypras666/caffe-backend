@@ -212,12 +212,36 @@ async function initDB() {
       await db.execute("ALTER TABLE users ADD COLUMN reset_token_exp DATETIME NULL AFTER reset_token");
     } catch (e) { /* already exists */ }
 
-    // Seed default settings (ignore if already exist)
+    // Seed default settings (INSERT IGNORE — safe to run multiple times)
     try {
-      const [exist] = await db.execute("SELECT 1 FROM system_settings WHERE setting_key = 'cafe_name'");
-      if (!exist || !exist.length) {
-        await db.execute("INSERT INTO system_settings (setting_key, setting_value, setting_type, setting_group, label, is_public, sort_order) VALUES ('cafe_name', ?, 'text', 'general', 'Nama Cafe', 1, 1)", [process.env.TENANT_NAME || 'Cafe']);
-        await db.execute("INSERT INTO system_settings (setting_key, setting_value, setting_type, setting_group, label, is_public, sort_order) VALUES ('cafe_address', '', 'text', 'general', 'Alamat Cafe', 1, 2)");
+      const seeds = [
+        // general
+        ['cafe_name',              process.env.TENANT_NAME || 'Cafe', 'text',    'general', 'Nama Cafe',           1, 1],
+        ['cafe_address',           '',                                 'text',    'general', 'Alamat Cafe',         1, 2],
+        ['currency_symbol',        'Rp',                               'text',    'general', 'Simbol Mata Uang',    0, 3],
+        // pos / shift
+        ['pos_require_shift',      'false',  'boolean', 'pos', 'Wajib Buka Shift Sebelum Transaksi', 0, 1],
+        ['pos_allow_no_table',     'true',   'boolean', 'pos', 'Izinkan Order Tanpa Meja',           0, 2],
+        ['pos_auto_print_receipt', 'false',  'boolean', 'pos', 'Auto Print Struk Setelah Bayar',     0, 3],
+        ['pos_require_payment_method','true','boolean', 'pos', 'Wajib Pilih Metode Pembayaran',      0, 4],
+        // member
+        ['topup_enabled',          'false',  'boolean', 'member', 'Aktifkan Fitur Top Up Saldo',     0, 1],
+        ['topup_min_amount',       '10000',  'number',  'member', 'Minimum Nominal Top Up (Rp)',     0, 2],
+        ['member_registration',    'true',   'boolean', 'member', 'Izinkan Registrasi Member Baru', 0, 3],
+        // booking
+        ['enable_booking',         'true',   'boolean', 'booking', 'Aktifkan Fitur Booking',        0, 1],
+        ['booking_require_dp',     'false',  'boolean', 'booking', 'Wajib Down Payment',            0, 2],
+        ['booking_dp_amount',      '50',     'number',  'booking', 'Persentase DP (%)',             0, 3],
+        // table
+        ['table_order_require_member','false','boolean','table', 'Wajib Login Member untuk Order QR',0, 1],
+        ['table_order_min_amount', '0',       'number', 'table', 'Minimum Order via QR (Rp)',       0, 2],
+      ];
+      for (const [k, v, t, g, l, p, o] of seeds) {
+        await db.execute(
+          `INSERT IGNORE INTO system_settings (setting_key, setting_value, setting_type, setting_group, label, is_public, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [k, v, t, g, l, p, o]
+        );
       }
     } catch (e) { /* non-fatal seed */ }
   } catch (e) { console.error('Table init error (non-fatal):', e.message); }
@@ -306,38 +330,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// ─── USERS ──────────────────────────────────────────────────────
-app.get('/api/users', authenticate, async (req, res) => {
-  try {
-    const [rows] = await db.query('SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC');
-    res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/users', authenticate, async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
-    const hashed = await bcrypt.hash(password, 10);
-    const [r] = await db.query('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-      [name, email, hashed, role || 'cashier']);
-    res.json({ id: r.insertId });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/users/:id', authenticate, async (req, res) => {
-  try {
-    const { name, email, role } = req.body;
-    await db.query('UPDATE users SET name=?, email=?, role=? WHERE id=?', [name, email, role, req.params.id]);
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/users/:id', authenticate, async (req, res) => {
-  try {
-    await db.query('DELETE FROM users WHERE id=?', [req.params.id]);
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// ─── USERS — handled by routes/users.js (see routeNames) ─────────
 
 // ─── DASHBOARD (public stats for gallery page) ──────────────────
 app.get('/api/dashboard/stats', async (req, res) => {
