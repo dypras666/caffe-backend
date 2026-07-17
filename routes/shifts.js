@@ -136,9 +136,9 @@ router.post('/open', authenticate, authorize('admin', 'kasir'), async (req, res)
 
     const shiftNumber = await nextShiftNumber();
     const [r] = await db.query(
-      `INSERT INTO shifts (shift_number, opened_by, opening_cash, station_id, notes, status, opened_at)
-       VALUES (?, ?, ?, ?, ?, 'open', NOW())`,
-      [shiftNumber, req.user.id, parseFloat(opening_cash), station_id || null, notes || null]
+      `INSERT INTO shifts (shift_number, user_id, opened_by, opening_cash, station_id, notes, status, opened_at, shift_date, start_time, end_time)
+       VALUES (?, ?, ?, ?, ?, ?, 'open', NOW(), CURDATE(), CURTIME(), CURTIME())`,
+      [shiftNumber, req.user.id, req.user.id, parseFloat(opening_cash), station_id || null, notes || null]
     );
 
     await audit({
