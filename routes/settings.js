@@ -132,6 +132,20 @@ router.put('/',
       const notFound = [];
 
       for (const item of settings) {
+        // Validate topup_enabled requires active payment methods
+        if (item.key === 'topup_enabled' && String(item.value) === 'true') {
+          const [[{ cnt }]] = await db.query(
+            'SELECT COUNT(*) cnt FROM payment_methods WHERE is_active = 1'
+          );
+          if (cnt === 0) {
+            return res.status(400).json({
+              error: 'Tidak dapat mengaktifkan topup',
+              message: 'Tidak ada payment method yang aktif. Tambahkan minimal 1 payment method di halaman Payments.',
+              redirect: '/payments',
+            });
+          }
+        }
+
         const [existing] = await db.query(
           'SELECT id, setting_key, setting_value, setting_type FROM system_settings WHERE setting_key = ?',
           [item.key]

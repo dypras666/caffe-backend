@@ -11,7 +11,7 @@ router.get('/', authenticate, async (req, res) => {
   try {
     const { room_id, status, date, time, branch_id } = req.query;
     let sql = `
-      SELECT t.*, r.name AS room_name,
+      SELECT t.*, t.number AS table_number, r.name AS room_name,
         (SELECT COUNT(*) FROM orders o
          WHERE o.table_id = t.id
            AND o.order_status NOT IN ('completed','cancelled')
@@ -44,7 +44,7 @@ router.get('/', authenticate, async (req, res) => {
     if (room_id) { sql += ' AND t.room_id = ?'; params.push(room_id); }
     if (status) { sql += ' AND t.status = ?'; params.push(status); }
     if (branch_id) { sql += ' AND t.branch_id = ?'; params.push(branch_id); }
-    sql += ' ORDER BY t.room_id, t.sort_order, t.table_number';
+    sql += ' ORDER BY t.room_id, t.sort_order, t.number';
 
     const [tables] = await db.query(sql, params);
 
@@ -90,17 +90,18 @@ router.get('/', authenticate, async (req, res) => {
 
     // Booking overlap check: mark tables as is_booked if have confirmed booking at requested date/time
     if (date && time) {
-      const checkTime = time.slice(0, 5);
-      // A 2-hour window around requested time
-      const [booked] = await db.query(
-        `SELECT DISTINCT table_number FROM bookings
-         WHERE booking_date = ?
-           AND status IN ('pending','confirmed')
-           AND TIME(booking_time) BETWEEN SUBTIME(?, '02:00:00') AND ADDTIME(?, '02:00:00')`,
-        [date, checkTime, checkTime]
-      );
-      const bookedNums = new Set(booked.map(b => b.table_number));
-      tables.forEach(t => { t.is_booked = bookedNums.has(t.table_number); });
+      try {
+        const checkTime = time.slice(0, 5);
+        const [booked] = await db.query(
+          `SELECT DISTINCT number FROM bookings
+           WHERE booking_date = ?
+             AND status IN ('pending','confirmed')
+             AND TIME(booking_time) BETWEEN SUBTIME(?, '02:00:00') AND ADDTIME(?, '02:00:00')`,
+          [date, checkTime, checkTime]
+        );
+        const bookedNums = new Set(booked.map(b => b.number));
+        tables.forEach(t => { t.is_booked = bookedNums.has(t.number); });
+      } catch (_) { /* bookings table may not exist */ }
     }
 
     res.json({ tables });
@@ -183,7 +184,7 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
   if (!table_number) return res.status(400).json({ error: 'Nomor meja wajib diisi' });
   try {
     const [result] = await db.query(
-      'INSERT INTO tables (room_id, table_number, name, capacity, status, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO tables (room_id, `number`, name, capacity, status, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [room_id || null, table_number, name || null, capacity || 4, status || 'available', is_active !== false ? 1 : 0, sort_order || 0]
     );
     const [[table]] = await db.query(
@@ -207,7 +208,7 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
     const fields = [];
     const vals = [];
     if (room_id !== undefined) { fields.push('room_id = ?'); vals.push(room_id); }
-    if (table_number) { fields.push('table_number = ?'); vals.push(table_number); }
+    if (table_number) { fields.push('`number` = ?'); vals.push(table_number); }
     if (name !== undefined) { fields.push('name = ?'); vals.push(name); }
     if (capacity !== undefined) { fields.push('capacity = ?'); vals.push(capacity); }
     if (status) { fields.push('status = ?'); vals.push(status); }

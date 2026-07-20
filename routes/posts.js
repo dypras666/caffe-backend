@@ -266,6 +266,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 // POST / — create post
 router.post('/',
   authenticate, authorize('admin'),
+  sanitizeInput,
   body('title').trim().notEmpty(),
   async (req, res) => {
     try {

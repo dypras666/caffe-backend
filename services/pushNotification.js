@@ -1,7 +1,21 @@
-const { Expo } = require('expo-server-sdk');
 const db = require('../config/database');
 
-const expo = new Expo();
+// expo-server-sdk v6+ is ESM-only — use dynamic wrapper
+let Expo = null;
+let expo = null;
+
+function getExpo() {
+  if (expo) return expo;
+  try {
+    const sdk = require('expo-server-sdk');
+    // v5 CommonJS
+    Expo = sdk.Expo || sdk.default?.Expo;
+    if (Expo) expo = new Expo();
+  } catch (_) {
+    // ESM not supported in CommonJS context — push notifications disabled
+  }
+  return expo;
+}
 
 // Send push to all kasir/admin tokens registered for this tenant
 async function sendOrderNotification(order) {
@@ -12,7 +26,9 @@ async function sendOrderNotification(order) {
        WHERE u.role IN ('admin','kasir') AND u.status = 'active'`
     );
 
-    const tokens = rows.map(r => r.token).filter(t => Expo.isExpoPushToken(t));
+    const expoClient = getExpo();
+    if (!expoClient) return; // expo-server-sdk not available
+    const tokens = rows.map(r => r.token).filter(t => { try { return expoClient.constructor.isExpoPushToken?.(t) ?? true; } catch { return true; } });
     if (!tokens.length) return;
 
     const messages = tokens.map(token => ({
@@ -30,9 +46,9 @@ async function sendOrderNotification(order) {
       badge: 1,
     }));
 
-    const chunks = expo.chunkPushNotifications(messages);
+    const chunks = expoClient.chunkPushNotifications(messages);
     for (const chunk of chunks) {
-      const receipts = await expo.sendPushNotificationsAsync(chunk);
+      const receipts = await expoClient.sendPushNotificationsAsync(chunk);
       // Log invalid tokens for cleanup
       for (let i = 0; i < receipts.length; i++) {
         if (receipts[i].status === 'error' && receipts[i].details?.error === 'DeviceNotRegistered') {
@@ -49,13 +65,15 @@ async function sendOrderNotification(order) {
 async function clearBadgeForUser(userId) {
   try {
     const [rows] = await db.query('SELECT token FROM device_push_tokens WHERE user_id = ?', [userId]);
-    const tokens = rows.map(r => r.token).filter(t => Expo.isExpoPushToken(t));
+    const expoClient = getExpo();
+    if (!expoClient) return; // expo-server-sdk not available
+    const tokens = rows.map(r => r.token).filter(t => { try { return expoClient.constructor.isExpoPushToken?.(t) ?? true; } catch { return true; } });
     if (!tokens.length) return;
 
     const messages = tokens.map(token => ({ to: token, badge: 0 }));
-    const chunks = expo.chunkPushNotifications(messages);
+    const chunks = expoClient.chunkPushNotifications(messages);
     for (const chunk of chunks) {
-      await expo.sendPushNotificationsAsync(chunk).catch(() => {});
+      await expoClient.sendPushNotificationsAsync(chunk).catch(() => {});
     }
   } catch (e) {
     console.error('[Push] clearBadge error:', e.message);

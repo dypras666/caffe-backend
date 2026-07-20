@@ -101,19 +101,30 @@ router.get('/',
 
       let baseQuery = 'FROM media m LEFT JOIN users u ON m.uploaded_by = u.id WHERE 1=1';
       const params = [];
-      if (file_type) { baseQuery += ' AND m.file_type = ?'; params.push(file_type); }
-      if (search) { baseQuery += ' AND (m.file_name LIKE ? OR m.alt_text LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+      // Support both schema variants: file_name/file_path/file_type OR filename/url/mime_type
+      if (file_type) { baseQuery += ' AND (m.file_type = ? OR m.mime_type LIKE ?)'; params.push(file_type, `${file_type}%`); }
+      if (search) { baseQuery += ' AND (COALESCE(m.file_name, m.filename, m.original_name) LIKE ?)'; params.push(`%${search}%`); }
 
       const [[{ total }]] = await db.query(`SELECT COUNT(*) AS total ${baseQuery}`, params);
       const [files] = await db.query(
-        `SELECT m.id, m.file_name, m.file_path, m.file_type, m.file_size, m.mime_type, m.storage_type, m.alt_text, m.created_at, u.name AS uploaded_by_name
+        `SELECT m.id,
+                COALESCE(m.file_name, m.filename, m.original_name) AS file_name,
+                COALESCE(m.file_path, m.url) AS file_path,
+                COALESCE(m.file_type, SUBSTRING_INDEX(m.mime_type,'/',1)) AS file_type,
+                COALESCE(m.file_size, m.size) AS file_size,
+                m.mime_type,
+                COALESCE(m.storage_type, 'local') AS storage_type,
+                COALESCE(m.alt_text, '') AS alt_text,
+                m.created_at,
+                u.name AS uploaded_by_name,
+                COALESCE(m.url, m.file_path) AS url
          ${baseQuery} ORDER BY m.created_at DESC LIMIT ? OFFSET ?`,
         [...params, limit, offset]
       );
 
       const filesWithUrl = await Promise.all(files.map(async f => ({
         ...f,
-        url: await storageService.getFileUrl(f.file_path, f.storage_type),
+        url: f.url || await storageService.getFileUrl(f.file_path, f.storage_type).catch(() => f.file_path),
       })));
 
       res.json({ files: filesWithUrl, pagination: { total, page, limit, total_pages: Math.ceil(total / limit) } });

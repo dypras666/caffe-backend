@@ -124,7 +124,7 @@ router.get('/receipt/:orderId', authenticate, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/printers/kitchen/:orderId — kitchen ticket data
+// GET /api/printers/kitchen/:orderId — kitchen ticket data, grouped by station
 router.get('/kitchen/:orderId', authenticate, async (req, res) => {
   try {
     const [[order]] = await db.query(
@@ -136,15 +136,44 @@ router.get('/kitchen/:orderId', authenticate, async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order tidak ditemukan' });
 
     const [items] = await db.query(
-      'SELECT product_name, quantity, notes FROM order_items WHERE order_id = ? ORDER BY id',
+      `SELECT oi.product_name, oi.quantity, oi.notes, oi.station_id,
+              s.name AS station_name, s.printer_id
+       FROM order_items oi
+       LEFT JOIN stations s ON s.id = oi.station_id
+       WHERE oi.order_id = ? ORDER BY oi.id`,
       [req.params.orderId]
     );
 
-    const [[kitchenPrinter]] = await db.query(
-      'SELECT * FROM printers WHERE type="kitchen" AND is_active=1 ORDER BY is_default DESC, sort_order LIMIT 1'
-    ).catch(() => [[null]]);
+    // Group items by station
+    const stationMap = {};
+    for (const item of items) {
+      const sid = item.station_id || 0;
+      if (!stationMap[sid]) stationMap[sid] = { station_id: sid, station_name: item.station_name || 'Kitchen', printer_id: item.printer_id, items: [] };
+      stationMap[sid].items.push({ product_name: item.product_name, quantity: item.quantity, notes: item.notes });
+    }
 
-    res.json({ printer: kitchenPrinter, ticket: { order, items } });
+    // Resolve printer for each station
+    const tickets = [];
+    let primaryPrinter = null;
+    for (const [sid, group] of Object.entries(stationMap)) {
+      let printer = null;
+      if (group.printer_id) {
+        [[printer]] = await db.query('SELECT * FROM printers WHERE id = ? AND is_active=1', [group.printer_id]);
+      }
+      if (!printer) {
+        [[printer]] = await db.query(
+          'SELECT * FROM printers WHERE type="kitchen" AND is_active=1 ORDER BY is_default DESC, sort_order LIMIT 1'
+        ).catch(() => [[null]]);
+      }
+      if (!primaryPrinter) primaryPrinter = printer;
+      tickets.push({ station: group.station_name, printer, items: group.items });
+    }
+
+    // Backward compat: flatten to old response shape
+    const primaryTicket = tickets.length > 0
+      ? { order, items: tickets[0].items }
+      : { order, items: [] };
+    res.json({ ticket: primaryTicket, printer: primaryPrinter, tickets, order });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

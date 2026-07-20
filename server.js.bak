@@ -187,35 +187,6 @@ async function initDB() {
       display_order INT DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB`);
-
-    // Migrate existing blog tables — add missing columns
-    for (const [table, col, def] of [
-      ['post_categories', 'display_order', 'INT DEFAULT 0'],
-      ['post_categories', 'color', "VARCHAR(20) DEFAULT '#6F4E37'"],
-      ['post_categories', 'parent_id', 'INT DEFAULT NULL'],
-      ['posts', 'created_by', 'INT'],
-      ['posts', 'updated_by', 'INT'],
-      ['posts', 'post_type', "VARCHAR(20) DEFAULT 'article'"],
-      ['posts', 'cover_image', 'VARCHAR(500)'],
-      ['posts', 'seo_title', 'VARCHAR(255)'],
-      ['posts', 'seo_description', 'TEXT'],
-      ['posts', 'seo_keywords', 'VARCHAR(255)'],
-      ['posts', 'allow_comments', 'TINYINT(1) DEFAULT 1'],
-      ['posts', 'views', 'INT DEFAULT 0'],
-      // media table — old schema: filename/url/mime_type/size
-      ['media', 'file_name', 'VARCHAR(255) DEFAULT NULL'],
-      ['media', 'file_path', 'VARCHAR(500) DEFAULT NULL'],
-      ['media', 'file_type', "VARCHAR(50) DEFAULT 'image'"],
-      ['media', 'file_size', 'INT DEFAULT NULL'],
-      ['media', 'storage_type', "VARCHAR(20) DEFAULT 'local'"],
-      ['media', 'alt_text', 'TEXT DEFAULT NULL'],
-    ]) {
-      try { await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch (e) {}
-    }
-    // Backfill file_name from filename, file_path from url
-    try { await db.execute("UPDATE media SET file_name=filename WHERE file_name IS NULL AND filename IS NOT NULL"); } catch(e) {}
-    try { await db.execute("UPDATE media SET file_path=url WHERE file_path IS NULL AND url IS NOT NULL"); } catch(e) {}
-    try { await db.execute("UPDATE media SET file_size=size WHERE file_size IS NULL AND size IS NOT NULL"); } catch(e) {}
     await conn.execute(`CREATE TABLE IF NOT EXISTS post_tags (
       id INT AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(100) NOT NULL,

@@ -120,7 +120,7 @@ const optionalAuth = async (req, res, next) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const [users] = await db.query(
         'SELECT id, name, email, role, status, balance, is_priority, branch_id FROM users WHERE id = ? AND status = "active"',
-        [decoded.userId]
+        [decoded.userId || decoded.id]
       );
 
       if (users.length > 0) {
