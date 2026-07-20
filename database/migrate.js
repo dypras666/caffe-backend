@@ -811,6 +811,113 @@ const MIGRATIONS = [
           AND i.is_active = 1;
     `,
   },
+
+  // ── Schema fixes applied 2026-07 ─────────────────────────────
+
+  {
+    id: '032_tables_rename_number_to_table_number',
+    optional: true,
+    sql: `
+      ALTER TABLE \`tables\`
+        CHANGE COLUMN IF EXISTS \`number\` \`table_number\` VARCHAR(20) NOT NULL;
+      ALTER TABLE \`tables\`
+        ADD COLUMN IF NOT EXISTS \`name\` VARCHAR(100) DEFAULT NULL AFTER table_number;
+    `,
+  },
+
+  {
+    id: '033_users_add_updated_at_avatar',
+    sql: `
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS avatar VARCHAR(500) DEFAULT NULL AFTER phone,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          ON UPDATE CURRENT_TIMESTAMP AFTER created_at;
+    `,
+  },
+
+  {
+    id: '034_categories_add_status_parent_order',
+    sql: `
+      ALTER TABLE categories
+        ADD COLUMN IF NOT EXISTS status ENUM('active','inactive') DEFAULT 'active' AFTER is_active,
+        ADD COLUMN IF NOT EXISTS parent_id INT DEFAULT NULL AFTER status,
+        ADD COLUMN IF NOT EXISTS display_order INT DEFAULT 0 AFTER parent_id,
+        ADD COLUMN IF NOT EXISTS image_url VARCHAR(500) DEFAULT NULL AFTER display_order,
+        ADD COLUMN IF NOT EXISTS slug VARCHAR(255) DEFAULT NULL AFTER image_url,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          ON UPDATE CURRENT_TIMESTAMP AFTER created_at;
+    `,
+  },
+
+  {
+    id: '035_expenses_add_branch_id',
+    sql: `
+      ALTER TABLE expenses
+        ADD COLUMN IF NOT EXISTS branch_id INT DEFAULT NULL AFTER category_id;
+    `,
+  },
+
+  {
+    id: '036_order_items_rename_price_to_unit_price',
+    optional: true,
+    sql: `
+      ALTER TABLE order_items
+        CHANGE COLUMN IF EXISTS \`price\` \`unit_price\` DECIMAL(10,2) NOT NULL,
+        ADD COLUMN IF NOT EXISTS product_name VARCHAR(200) DEFAULT NULL AFTER product_id,
+        ADD COLUMN IF NOT EXISTS subtotal DECIMAL(10,2) DEFAULT 0 AFTER unit_price,
+        ADD COLUMN IF NOT EXISTS addons_total DECIMAL(10,2) DEFAULT 0.00 AFTER subtotal,
+        ADD COLUMN IF NOT EXISTS variants_selected LONGTEXT DEFAULT NULL AFTER addons_total,
+        ADD COLUMN IF NOT EXISTS addons_selected LONGTEXT DEFAULT NULL AFTER variants_selected,
+        ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL AFTER addons_selected,
+        ADD COLUMN IF NOT EXISTS station_id INT DEFAULT NULL AFTER notes,
+        ADD COLUMN IF NOT EXISTS station_status ENUM('pending','preparing','ready') DEFAULT 'pending' AFTER station_id;
+    `,
+  },
+
+  {
+    id: '037_media_normalize_columns',
+    optional: true,
+    sql: `
+      ALTER TABLE media
+        ADD COLUMN IF NOT EXISTS file_name VARCHAR(255) DEFAULT NULL AFTER id,
+        ADD COLUMN IF NOT EXISTS file_path VARCHAR(500) DEFAULT NULL AFTER file_name,
+        ADD COLUMN IF NOT EXISTS file_type VARCHAR(50) DEFAULT NULL AFTER file_path,
+        ADD COLUMN IF NOT EXISTS file_size INT DEFAULT NULL AFTER file_type,
+        ADD COLUMN IF NOT EXISTS storage_type VARCHAR(20) DEFAULT 'local' AFTER file_size,
+        ADD COLUMN IF NOT EXISTS alt_text VARCHAR(255) DEFAULT NULL AFTER storage_type;
+      UPDATE media SET
+        file_name = COALESCE(file_name, filename, original_name),
+        file_path = COALESCE(file_path, url),
+        file_size = COALESCE(file_size, size),
+        file_type = COALESCE(file_type, SUBSTRING_INDEX(mime_type,'/',1)),
+        storage_type = COALESCE(storage_type, 'local')
+      WHERE file_name IS NULL OR file_path IS NULL;
+    `,
+  },
+
+  {
+    id: '038_system_settings_pos_seed',
+    sql: `
+      INSERT IGNORE INTO system_settings (setting_key, setting_value, setting_type, setting_group, label, is_public, sort_order) VALUES
+        ('pos_require_shift',          'false', 'boolean', 'pos',    'Wajib Buka Shift Sebelum Transaksi',  0, 1),
+        ('pos_allow_no_table',         'true',  'boolean', 'pos',    'Izinkan Order Tanpa Meja',            0, 2),
+        ('pos_auto_print_receipt',     'false', 'boolean', 'pos',    'Auto Print Struk Setelah Bayar',      0, 3),
+        ('pos_require_payment_method', 'true',  'boolean', 'pos',    'Wajib Pilih Metode Pembayaran',       0, 4),
+        ('topup_enabled',              'false', 'boolean', 'member', 'Aktifkan Fitur Top Up Saldo',         0, 1),
+        ('topup_min_amount',           '10000', 'number',  'member', 'Minimum Nominal Top Up (Rp)',         0, 2),
+        ('member_registration',        'true',  'boolean', 'member', 'Izinkan Registrasi Member Baru',      0, 3),
+        ('currency_symbol',            'Rp',    'text',    'general','Simbol Mata Uang',                    0, 3);
+    `,
+  },
+
+  {
+    id: '039_suppliers_rename_contact',
+    optional: true,
+    sql: `
+      ALTER TABLE suppliers
+        CHANGE COLUMN IF EXISTS \`contact\` \`contact_person\` VARCHAR(255) DEFAULT NULL;
+    `,
+  },
 ];
 
 async function run() {
