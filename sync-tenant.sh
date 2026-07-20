@@ -77,6 +77,12 @@ do_sync() {
     done
   fi
 
+  # Sync package.json then install any missing packages
+  $SCP "${SCRIPT_DIR}/package.json" "${SERVER}:${dir}/package.json" 2>/dev/null || true
+  echo "  📦 Installing dependencies..."
+  $SSH "cd ${dir} && npm install --production --silent 2>/dev/null" && \
+    echo "  ✅ npm install done" || echo "  ⚠ npm install had warnings"
+
   if [ "$MIGRATE" = true ]; then
     echo "  ⟳ Running migrations..."
     $SSH "cd ${dir} && node database/migrate.js" && \

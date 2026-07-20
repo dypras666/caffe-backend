@@ -920,6 +920,17 @@ const MIGRATIONS = [
   },
 
   {
+    id: '041_orders_add_missing_columns',
+    sql: `
+      ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS served_by INT DEFAULT NULL AFTER shift_id,
+        ADD COLUMN IF NOT EXISTS tax DECIMAL(10,2) DEFAULT 0.00 AFTER subtotal,
+        ADD COLUMN IF NOT EXISTS discount DECIMAL(10,2) DEFAULT 0.00 AFTER tax,
+        ADD COLUMN IF NOT EXISTS order_type VARCHAR(20) DEFAULT 'dine-in' AFTER order_status;
+    `,
+  },
+
+  {
     id: '040_bookings_add_missing_columns',
     sql: `
       ALTER TABLE bookings
