@@ -918,6 +918,26 @@ const MIGRATIONS = [
         CHANGE COLUMN IF EXISTS \`contact\` \`contact_person\` VARCHAR(255) DEFAULT NULL;
     `,
   },
+
+  {
+    id: '040_bookings_add_missing_columns',
+    sql: `
+      ALTER TABLE bookings
+        ADD COLUMN IF NOT EXISTS branch_id INT DEFAULT NULL AFTER created_by,
+        ADD COLUMN IF NOT EXISTS table_number VARCHAR(20) DEFAULT NULL AFTER table_id,
+        ADD COLUMN IF NOT EXISTS special_request TEXT DEFAULT NULL AFTER notes,
+        ADD COLUMN IF NOT EXISTS guests INT DEFAULT 1 AFTER pax,
+        ADD COLUMN IF NOT EXISTS name VARCHAR(150) DEFAULT NULL AFTER id,
+        ADD COLUMN IF NOT EXISTS email VARCHAR(150) DEFAULT NULL AFTER name,
+        ADD COLUMN IF NOT EXISTS phone VARCHAR(50) DEFAULT NULL AFTER email;
+      UPDATE bookings SET
+        name  = COALESCE(name, customer_name),
+        email = COALESCE(email, customer_email),
+        phone = COALESCE(phone, customer_phone),
+        guests = COALESCE(guests, pax)
+      WHERE name IS NULL OR email IS NULL;
+    `,
+  },
 ];
 
 async function run() {

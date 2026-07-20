@@ -104,7 +104,7 @@ router.get('/',
       );
 
       const [bookings] = await db.query(
-        `SELECT b.id, b.name, b.email, b.phone, b.booking_date, b.booking_time, b.guests,
+        `SELECT b.id, COALESCE(b.customer_name, b.name) AS name, COALESCE(b.customer_email, b.email) AS email, COALESCE(b.customer_phone, b.phone) AS phone, b.booking_date, b.booking_time, COALESCE(b.pax, b.guests) AS guests,
                 b.table_number, b.special_request, b.status, b.branch_id, b.created_at, b.updated_at,
                 br.name AS branch_name
          ${baseFrom} ${baseJoins}
@@ -140,7 +140,7 @@ router.get('/:id',
       }
 
       const [bookings] = await db.query(
-        `SELECT b.id, b.name, b.email, b.phone, b.booking_date, b.booking_time, b.guests,
+        `SELECT b.id, COALESCE(b.customer_name, b.name) AS name, COALESCE(b.customer_email, b.email) AS email, COALESCE(b.customer_phone, b.phone) AS phone, b.booking_date, b.booking_time, COALESCE(b.pax, b.guests) AS guests,
                 b.table_number, b.special_request, b.status, b.branch_id, b.created_at, b.updated_at,
                 br.name AS branch_name
          FROM bookings b
@@ -345,7 +345,7 @@ router.delete('/:id',
       const bookingId = req.params.id;
 
       const [bookings] = await db.query(
-        'SELECT id, name, email, booking_date FROM bookings WHERE id = ?',
+        'SELECT id, COALESCE(customer_name, name) AS name, COALESCE(customer_email, email) AS email, booking_date FROM bookings WHERE id = ?',
         [bookingId]
       );
 
