@@ -501,7 +501,7 @@ const routeNames = [
   'stock', 'recipes', 'units', 'variants', 'expenses', 'hr',
   'audit', 'backup', 'integrations', 'posts', 'printers', 'stations',
   'bookings', 'members', 'media', 'reports', 'settings', 'register',
-  'ingredients', 'users', 'dashboard',
+  'ingredients', 'users', 'dashboard', 'auth',
 ];
 routeNames.forEach(name => {
   try {
