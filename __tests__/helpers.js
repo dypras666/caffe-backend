@@ -3,6 +3,9 @@ const app = require('../server');
 const db = require('../config/database');
 const bcrypt = require('bcryptjs');
 
+// Wait for DB/server init before tests run
+beforeAll(async () => { if (app.ready) await app.ready; }, 15000);
+
 let cachedAdminToken = null;
 let cachedKasirToken = null;
 let cachedWaiterToken = null;
@@ -10,9 +13,26 @@ let cachedMemberToken = null;
 
 const getAdminToken = async () => {
   if (cachedAdminToken) return cachedAdminToken;
-  const res = await request(app)
-    .post('/api/auth/login')
-    .send({ email: 'admin@cafeazzura.com', password: 'admin123' });
+  // Try env-specified admin email first, then fallback options
+  const candidates = [
+    { email: process.env.TEST_ADMIN_EMAIL || 'admin@cafeazzura.com', password: process.env.TEST_ADMIN_PASSWORD || 'admin123' },
+    { email: 'admin@cafeazzura.com', password: 'admin123' },
+  ];
+  for (const cred of candidates) {
+    const res = await request(app).post('/api/auth/login').send(cred);
+    if (res.body.token) { cachedAdminToken = res.body.token; return cachedAdminToken; }
+  }
+  // Auto-create admin user for test environment
+  const email = 'admin.test@cafeazzura.com';
+  const [rows] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
+  if (rows.length === 0) {
+    const hashed = await bcrypt.hash('admin123', 10);
+    await db.query(
+      'INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, ?, ?)',
+      ['Admin Test', email, hashed, 'admin', 'active']
+    );
+  }
+  const res = await request(app).post('/api/auth/login').send({ email, password: 'admin123' });
   if (!res.body.token) throw new Error(`Admin login failed: ${JSON.stringify(res.body)}`);
   cachedAdminToken = res.body.token;
   return cachedAdminToken;

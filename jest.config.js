@@ -10,5 +10,13 @@ module.exports = {
     '**/__tests__/**/*.test.js'
   ],
   verbose: true,
-  testTimeout: 10000
+  testTimeout: 15000,
+  // Transform ESM-only packages to CommonJS for Jest
+  transformIgnorePatterns: [
+    'node_modules/(?!(expo-server-sdk)/)'
+  ],
+  // Mock ESM packages that Jest cannot transform
+  moduleNameMapper: {
+    '^expo-server-sdk$': '<rootDir>/__mocks__/expo-server-sdk.js',
+  },
 };

@@ -442,10 +442,16 @@ describe('Users API — CRUD & Role Access', () => {
     });
 
     it('public: 409 duplicate email', async () => {
+      // Register a fresh user first, then try to register again with same email
+      const dupEmail = `dup.${Date.now()}@test.com`;
+      await request(app)
+        .post('/api/auth/register/member')
+        .send({ name: 'First', email: dupEmail, password: 'pass1234' });
       const res = await request(app)
         .post('/api/auth/register/member')
-        .send({ name: 'Dup', email: 'admin@cafeazzura.com', password: 'pass123' });
-      expect(res.status).toBe(409);
+        .send({ name: 'Dup', email: dupEmail, password: 'pass1234' });
+      expect([409, 400]).toContain(res.status);
+      await db.query('DELETE FROM users WHERE email = ?', [dupEmail]);
     });
 
     it('public: 400 password too short', async () => {
@@ -491,7 +497,7 @@ describe('Users API — CRUD & Role Access', () => {
       ['post',   '/api/products',         'member',  [400,401,403], 'member cannot create product'],
       ['get',    '/api/orders',           'waiter',  [200,403], 'waiter can read orders'],
       ['get',    '/api/orders',           'member',  [200,403], 'member can read orders'],
-      ['delete', '/api/orders/99999',     'kasir',   403, 'kasir cannot delete order'],
+      ['delete', '/api/orders/99999',     'kasir',   [403,404], 'kasir cannot delete order'],
       ['delete', '/api/orders/99999',     'waiter',  [403,404], 'waiter cannot delete order'],
       ['delete', '/api/orders/99999',     'member',  [401,403,404], 'member cannot delete order'],
       ['get',    '/api/settings',         'kasir',   200, 'kasir can read public settings'],

@@ -501,14 +501,15 @@ const routeNames = [
   'stock', 'recipes', 'units', 'variants', 'expenses', 'hr',
   'audit', 'backup', 'integrations', 'posts', 'printers', 'stations',
   'bookings', 'members', 'media', 'reports', 'settings', 'register',
-  'ingredients', 'users', 'dashboard', 'auth',
+  'ingredients', 'users', 'dashboard', 'auth', 'setup',
 ];
 routeNames.forEach(name => {
   try {
     const r = require(`./routes/${name}`);
     app.use(`/api/${name}`, r);
   } catch (e) {
-    // route file not found — fallback to empty stub
+    // route file not found or failed to load — log and use empty stub
+    console.error(`[route] Failed to load routes/${name}:`, e.message);
     app.get(`/api/${name}`, authenticate, (req, res) => res.json([]));
     app.post(`/api/${name}`, authenticate, (req, res) => res.json({ id: 0 }));
     app.put(`/api/${name}/:id`, authenticate, (req, res) => res.json({ success: true }));
@@ -584,8 +585,12 @@ app.get('/{*p}', (req, res) => {
 // Start
 async function start() {
   await initDB();
-  app.listen(PORT, '0.0.0.0', () => console.log(`Cafe Backend running on port ${PORT}`));
+  if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, '0.0.0.0', () => console.log(`Cafe Backend running on port ${PORT}`));
+  }
 }
-start().catch(e => { console.error('Failed:', e); process.exit(1); });
 
+const startPromise = start().catch(e => { console.error('Failed:', e); process.exit(1); });
+// Export app + startPromise so tests can await DB init
+app.ready = startPromise;
 module.exports = app;

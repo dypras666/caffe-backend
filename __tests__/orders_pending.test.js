@@ -21,12 +21,27 @@ describe('Orders — Pending Payment & Tables Unpaid', () => {
     adminToken = await getAdminToken();
     kasirToken = await getKasirToken();
 
-    // Get a product to use in orders
-    const [[product]] = await db.query(
+    // Get or create a product for testing
+    const [[existingProd]] = await db.query(
       "SELECT id FROM products WHERE status = 'active' AND is_available = 1 LIMIT 1"
     );
-    if (!product) throw new Error('No active product found — run seeds first');
-    productId = product.id;
+    if (existingProd) {
+      productId = existingProd.id;
+    } else {
+      // Ensure category exists
+      let catId;
+      const [[cat]] = await db.query("SELECT id FROM categories LIMIT 1");
+      if (cat) { catId = cat.id; }
+      else {
+        const [cr] = await db.query("INSERT INTO categories (name, is_active) VALUES ('Test', 1)");
+        catId = cr.insertId;
+      }
+      const [pr] = await db.query(
+        "INSERT INTO products (name, price, category_id, status, is_available) VALUES ('Test Product', 10000, ?, 'active', 1)",
+        [catId]
+      );
+      productId = pr.insertId;
+    }
 
     // Get or create a test table
     const [[existingTable]] = await db.query(

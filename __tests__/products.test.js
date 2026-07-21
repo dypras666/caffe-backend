@@ -1,21 +1,23 @@
 const request = require('supertest');
 const app = require('../server');
 const db = require('../config/database');
+const { getAdminToken } = require('./helpers');
 
 describe('Products API Tests', () => {
   let authToken;
   let productId;
+  let testCategoryId;
 
   beforeAll(async () => {
-    // Login to get token
-    const loginRes = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'admin@cafeazzura.com',
-        password: 'admin123'
-      });
-
-    authToken = loginRes.body.token;
+    authToken = await getAdminToken();
+    // Ensure test category exists
+    const [cats] = await db.query("SELECT id FROM categories WHERE name='Test Category' LIMIT 1");
+    if (cats.length > 0) {
+      testCategoryId = cats[0].id;
+    } else {
+      const [r] = await db.query("INSERT INTO categories (name, is_active) VALUES ('Test Category', 1)");
+      testCategoryId = r.insertId;
+    }
   });
 
   afterAll(async () => {
@@ -69,7 +71,7 @@ describe('Products API Tests', () => {
         .post('/api/products')
         .set('Authorization', `Bearer ${authToken}`)
         .send({
-          category_id: 1,
+          category_id: testCategoryId,
           name: 'Test Coffee',
           price: 5.99,
           cost_price: 2.50,
