@@ -849,6 +849,60 @@ router.delete('/:id',
   }
 );
 
+// ─── Feature: Pindah Meja ─────────────────────────────────────────────────────
+
+// PUT /:id/table — transfer order to a different table
+router.put('/:id/table',
+  authenticate,
+  authorize('admin', 'kasir', 'waiter'),
+  async (req, res) => {
+    try {
+      const orderId = req.params.id;
+      const { table_id } = req.body;
+
+      const [[order]] = await db.query(
+        'SELECT id, order_status, table_id FROM orders WHERE id = ? AND order_status NOT IN ("cancelled","completed","deleted")',
+        [orderId]
+      );
+      if (!order) return res.status(404).json({ error: 'Order tidak ditemukan' });
+
+      let tableNumber = null;
+      if (table_id) {
+        const [[table]] = await db.query(
+          'SELECT id, table_number, name, status FROM tables WHERE id = ?',
+          [table_id]
+        );
+        if (!table) return res.status(404).json({ error: 'Meja tidak ditemukan' });
+
+        // Free old table if occupied by this order only
+        if (order.table_id && order.table_id !== table_id) {
+          const [[{ cnt }]] = await db.query(
+            'SELECT COUNT(*) AS cnt FROM orders WHERE table_id=? AND order_status NOT IN ("cancelled","completed","deleted") AND id!=?',
+            [order.table_id, orderId]
+          );
+          if (cnt === 0) {
+            await db.query('UPDATE tables SET status="available" WHERE id=?', [order.table_id]);
+          }
+        }
+
+        // Mark new table occupied
+        await db.query('UPDATE tables SET status="occupied" WHERE id=?', [table_id]);
+        tableNumber = table.table_number ?? table.name;
+      }
+
+      await db.query(
+        'UPDATE orders SET table_id=?, table_number=? WHERE id=?',
+        [table_id || null, tableNumber, orderId]
+      );
+
+      res.json({ success: true, table_id, table_number: tableNumber });
+    } catch (e) {
+      console.error('Transfer table error:', e.message);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
 // ─── Feature 2: Order Edit API ────────────────────────────────────────────────
 
 // PUT /:id/items — replace all items on a pending order
