@@ -929,49 +929,6 @@ const MIGRATIONS = [
   },
 
   {
-    id: '047_orders_expand_payment_method_enum',
-    optional: true,
-    sql: `
-      ALTER TABLE orders
-        MODIFY COLUMN payment_method VARCHAR(50) DEFAULT 'cash';
-    `,
-  },
-
-  {
-    id: '048_product_field_definitions_add_field_name',
-    sql: `
-      ALTER TABLE product_field_definitions
-        ADD COLUMN IF NOT EXISTS field_name VARCHAR(150) DEFAULT NULL AFTER field_key;
-      UPDATE product_field_definitions SET field_name = COALESCE(field_name, field_label, field_key) WHERE field_name IS NULL;
-    `,
-  },
-
-  {
-    id: '046_orders_expand_payment_status_enum',
-    optional: true,
-    sql: `
-      ALTER TABLE orders
-        MODIFY COLUMN payment_status ENUM('unpaid','paid','pending','partial','refund','cancelled') DEFAULT 'unpaid';
-    `,
-  },
-
-  {
-    id: '045_product_field_definitions_table',
-    sql: `
-      CREATE TABLE IF NOT EXISTS product_field_definitions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        field_key VARCHAR(100) NOT NULL UNIQUE,
-        field_label VARCHAR(150) NOT NULL,
-        field_type ENUM('text','number','boolean','select','image') DEFAULT 'text',
-        is_required TINYINT(1) DEFAULT 0,
-        sort_order INT DEFAULT 0,
-        is_active TINYINT(1) DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB;
-    `,
-  },
-
-  {
     id: '044_product_custom_fields_table',
     sql: `
       CREATE TABLE IF NOT EXISTS product_custom_fields (
@@ -1030,6 +987,50 @@ const MIGRATIONS = [
         phone = COALESCE(phone, customer_phone),
         guests = COALESCE(guests, pax)
       WHERE name IS NULL OR email IS NULL;
+    `,
+  },
+
+  {
+    id: '045_product_field_definitions_table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS product_field_definitions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        field_key VARCHAR(100) NOT NULL UNIQUE,
+        field_label VARCHAR(150) NOT NULL,
+        field_type ENUM('text','number','boolean','select','image') DEFAULT 'text',
+        is_required TINYINT(1) DEFAULT 0,
+        sort_order INT DEFAULT 0,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB;
+    `,
+  },
+
+  {
+    id: '046_orders_expand_payment_status_enum',
+    optional: true,
+    sql: `
+      ALTER TABLE orders
+        MODIFY COLUMN payment_status ENUM('unpaid','paid','pending','partial','refund','cancelled') DEFAULT 'unpaid';
+    `,
+  },
+
+  {
+    id: '047_orders_expand_payment_method_enum',
+    optional: true,
+    sql: `
+      ALTER TABLE orders
+        MODIFY COLUMN payment_method VARCHAR(50) DEFAULT 'cash';
+    `,
+  },
+
+  {
+    id: '048_product_field_definitions_add_field_name',
+    optional: true,
+    sql: `
+      ALTER TABLE product_field_definitions
+        ADD COLUMN IF NOT EXISTS field_name VARCHAR(150) DEFAULT NULL AFTER field_key;
+      UPDATE product_field_definitions SET field_name = COALESCE(field_name, field_label, field_key) WHERE field_name IS NULL;
     `,
   },
 ];

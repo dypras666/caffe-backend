@@ -21,14 +21,16 @@ const db = pool.promise();
 // Also export raw pool for transactions
 db.getPool = () => pool;
 
-// Test connection
-pool.getConnection((err, connection) => {
-  if (err) {
-    console.error('❌ Database connection failed:', err.message);
-    process.exit(1);
-  }
-  console.log('✅ Database connected successfully');
-  connection.release();
-});
+// Test connection (skip during provisioning/migrations via SKIP_DB_TEST=true)
+if (!process.env.SKIP_DB_TEST) {
+  pool.getConnection((err, connection) => {
+    if (err) {
+      console.error('❌ Database connection failed:', err.message);
+      process.exit(1);
+    }
+    console.log('✅ Database connected successfully');
+    connection.release();
+  });
+}
 
 module.exports = db;
