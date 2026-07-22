@@ -71,9 +71,13 @@ router.get('/display/:stationCode', async (req, res) => {
       });
     }
 
+    // Add queue_number — sequential position in today's station queue
+    const ordersArr = Array.from(ordersMap.values());
+    ordersArr.forEach((o, idx) => { o.queue_number = idx + 1; });
+
     res.json({
       station,
-      orders: Array.from(ordersMap.values()),
+      orders: ordersArr,
     });
   } catch (error) {
     console.error('Station display error:', error);
