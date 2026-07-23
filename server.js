@@ -296,6 +296,10 @@ async function initDB() {
     // Sync total = total_amount for existing orders
     try { await db.execute('UPDATE orders SET total = total_amount WHERE total = 0 OR total IS NULL'); } catch(e) {}
 
+    // Shifts — columns added in newer versions
+    await autoAlter('shifts', 'expected_cash', 'DECIMAL(15,2) DEFAULT 0');
+    await autoAlter('shifts', 'handover_cash', 'DECIMAL(15,2) DEFAULT 0');
+
     // Ensure existing tenants have reset_token columns
     try {
       await db.execute("ALTER TABLE users ADD COLUMN reset_token VARCHAR(255) NULL AFTER role");
