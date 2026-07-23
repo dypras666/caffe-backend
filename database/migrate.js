@@ -1033,6 +1033,180 @@ const MIGRATIONS = [
       UPDATE product_field_definitions SET field_name = COALESCE(field_name, field_label, field_key) WHERE field_name IS NULL;
     `,
   },
+
+  // ─── Schema fixes untuk STB / fresh install ────────────────────────────────
+
+  {
+    id: '050_roles_table_rbac',
+    sql: `
+      CREATE TABLE IF NOT EXISTS roles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(50) UNIQUE NOT NULL,
+        label VARCHAR(100),
+        description TEXT,
+        permissions JSON,
+        is_system TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB;
+
+      INSERT IGNORE INTO roles (name, label, is_system, permissions) VALUES
+      ('admin', 'Administrator', 1, '{"orders":["read","create","update","delete","update_status","cancel","edit_items"],"products":["read","create","update","delete"],"categories":["read","create","update","delete"],"shifts":["read","create","close"],"tables":["read","update"],"members":["read","create","update"],"reports":["read"],"users":["read","create","update","delete"],"settings":["read","update"]}'),
+      ('kasir', 'Kasir', 1, '{"orders":["read","create","update","update_status","cancel","edit_items"],"products":["read"],"categories":["read"],"shifts":["read","create","close"],"tables":["read","update"],"members":["read"]}'),
+      ('waiter', 'Waiter', 1, '{"orders":["read","create","update_status"],"products":["read"],"tables":["read"],"members":["read"]}');
+    `,
+  },
+
+  {
+    id: '051_order_items_add_missing_columns',
+    sql: `
+      ALTER TABLE order_items
+        ADD COLUMN IF NOT EXISTS product_price DECIMAL(10,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS unit_price DECIMAL(10,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS addons_total DECIMAL(10,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS subtotal DECIMAL(15,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS notes TEXT,
+        ADD COLUMN IF NOT EXISTS product_name VARCHAR(200),
+        ADD COLUMN IF NOT EXISTS variants_selected JSON,
+        ADD COLUMN IF NOT EXISTS addons_selected JSON,
+        ADD COLUMN IF NOT EXISTS station_id INT DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS station_status ENUM('pending','preparing','ready') DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    `,
+  },
+
+  {
+    id: '052_shifts_add_missing_columns',
+    sql: `
+      ALTER TABLE shifts
+        ADD COLUMN IF NOT EXISTS expected_cash DECIMAL(15,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS handover_cash DECIMAL(15,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS user_id INT DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS shift_date DATE,
+        ADD COLUMN IF NOT EXISTS start_time TIME,
+        ADD COLUMN IF NOT EXISTS end_time TIME;
+    `,
+  },
+
+  {
+    id: '053_orders_add_missing_columns',
+    sql: `
+      ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS served_by INT DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS branch_id INT DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS order_status VARCHAR(20) DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS order_number VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS order_type VARCHAR(20) DEFAULT 'dine-in',
+        ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS subtotal DECIMAL(10,0) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS tax DECIMAL(10,0) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS discount DECIMAL(10,0) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS voucher_code VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS voucher_discount DECIMAL(10,0) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS table_id INT,
+        ADD COLUMN IF NOT EXISTS table_number VARCHAR(20),
+        ADD COLUMN IF NOT EXISTS customer_email VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS shift_id INT,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+    `,
+  },
+
+  {
+    id: '054_tables_add_missing_columns',
+    sql: `
+      ALTER TABLE tables
+        ADD COLUMN IF NOT EXISTS table_number VARCHAR(20),
+        ADD COLUMN IF NOT EXISTS name VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS room_id INT,
+        ADD COLUMN IF NOT EXISTS branch_id INT,
+        ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS is_active TINYINT(1) DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS maintenance_note TEXT,
+        ADD COLUMN IF NOT EXISTS manual_close TINYINT(1) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS auto_free_at TIMESTAMP NULL;
+      UPDATE tables SET table_number = CONCAT('A', LPAD(number, 2, '0')) WHERE table_number IS NULL AND number IS NOT NULL;
+      UPDATE tables SET name = CONCAT('Meja ', IFNULL(table_number, id)) WHERE name IS NULL;
+    `,
+  },
+
+  {
+    id: '055_order_sequences',
+    sql: `
+      CREATE TABLE IF NOT EXISTS order_sequences (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        seq_key VARCHAR(50) NOT NULL UNIQUE,
+        last_number INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB;
+      INSERT IGNORE INTO order_sequences (seq_key, last_number) VALUES ('order', 0), ('shift', 0);
+    `,
+  },
+
+  {
+    id: '056_product_stations_tables',
+    sql: `
+      CREATE TABLE IF NOT EXISTS product_stations (
+        product_id INT NOT NULL,
+        station_id INT NOT NULL,
+        PRIMARY KEY (product_id, station_id)
+      ) ENGINE=InnoDB;
+      CREATE TABLE IF NOT EXISTS category_stations (
+        category_id INT NOT NULL,
+        station_id INT NOT NULL,
+        PRIMARY KEY (category_id, station_id)
+      ) ENGINE=InnoDB;
+      CREATE TABLE IF NOT EXISTS device_push_tokens (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        token VARCHAR(200) NOT NULL,
+        device_name VARCHAR(200),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_user_token (user_id, token),
+        INDEX idx_user (user_id)
+      ) ENGINE=InnoDB;
+    `,
+  },
+
+  {
+    id: '057_mobile_sync_tables',
+    sql: `
+      CREATE TABLE IF NOT EXISTS mobile_sync_queue (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        device_id VARCHAR(100) NOT NULL,
+        user_id INT NOT NULL,
+        local_id VARCHAR(100) NOT NULL,
+        entity_type ENUM('order') DEFAULT 'order',
+        payload JSON NOT NULL,
+        checksum VARCHAR(64) NOT NULL,
+        status ENUM('pending','processing','done','failed','conflict') DEFAULT 'pending',
+        attempts INT DEFAULT 0,
+        server_id INT DEFAULT NULL,
+        server_ref VARCHAR(100) DEFAULT NULL,
+        conflict_data JSON DEFAULT NULL,
+        error_msg TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        processed_at TIMESTAMP NULL,
+        INDEX idx_device (device_id),
+        INDEX idx_status (status),
+        UNIQUE KEY uk_device_local (device_id, local_id)
+      ) ENGINE=InnoDB;
+      CREATE TABLE IF NOT EXISTS mobile_sync_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        device_id VARCHAR(100) NOT NULL,
+        user_id INT NOT NULL,
+        batch_id VARCHAR(64) NOT NULL,
+        total INT DEFAULT 0,
+        done INT DEFAULT 0,
+        failed INT DEFAULT 0,
+        conflict INT DEFAULT 0,
+        duration_ms INT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB;
+    `,
+  },
 ];
 
 async function run() {
