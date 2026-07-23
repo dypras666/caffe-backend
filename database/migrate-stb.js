@@ -168,8 +168,8 @@ const STB_MIGRATIONS = [
   },
 ];
 
-async function run() {
-  console.log('\n🚀 STB Migration Runner\n');
+async function run(exitAfter = true) {
+  if (exitAfter) console.log('\n🚀 STB Migration Runner\n');
 
   // Tracking table
   await db.query(`
@@ -213,8 +213,21 @@ async function run() {
     done++;
   }
 
-  console.log(`\n✅ STB Migration done — ${done} applied, ${skipped} skipped.\n`);
-  process.exit(0);
+  if (exitAfter) {
+    console.log(`\n✅ STB Migration done — ${done} applied, ${skipped} skipped.\n`);
+    process.exit(0);
+  } else if (done > 0) {
+    console.log(`[STB Migration] ${done} new migrations applied.`);
+  }
 }
 
-run().catch(e => { console.error('Fatal:', e.message); process.exit(1); });
+// Export for use in server.js startup
+async function runStbMigrations() {
+  await run(false); // false = don't exit process when called from server
+}
+
+module.exports = { runStbMigrations };
+
+if (require.main === module) {
+  run(true).catch(e => { console.error('Fatal:', e.message); process.exit(1); });
+}
