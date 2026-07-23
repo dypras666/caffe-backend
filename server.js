@@ -300,6 +300,21 @@ async function initDB() {
     await autoAlter('shifts', 'expected_cash', 'DECIMAL(15,2) DEFAULT 0');
     await autoAlter('shifts', 'handover_cash', 'DECIMAL(15,2) DEFAULT 0');
 
+    // Roles table — required by can() RBAC middleware
+    try {
+      await db.execute(`CREATE TABLE IF NOT EXISTS roles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(50) UNIQUE NOT NULL,
+        label VARCHAR(100), description TEXT, permissions JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB`);
+      await db.execute(`INSERT IGNORE INTO roles (name, label, permissions) VALUES
+        ('admin','Admin','{"orders":["read","create","update","delete","update_status","cancel","edit_items"],"products":["read","create","update","delete"],"shifts":["read","create","close"],"tables":["read","update"],"members":["read","create","update"]}'),
+        ('kasir','Kasir','{"orders":["read","create","update","update_status","cancel","edit_items"],"products":["read"],"shifts":["read","create","close"],"tables":["read","update"],"members":["read"]}'),
+        ('waiter','Waiter','{"orders":["read","create","update_status"],"products":["read"],"tables":["read"],"members":["read"]}')`
+      );
+    } catch(e) { /* roles already exist */ }
+
     // Ensure existing tenants have reset_token columns
     try {
       await db.execute("ALTER TABLE users ADD COLUMN reset_token VARCHAR(255) NULL AFTER role");
