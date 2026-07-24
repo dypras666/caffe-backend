@@ -1,11 +1,27 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const { body, param, query, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authenticate, authorize, can } = require('../middleware/auth');
 const { sanitizeInput } = require('../middleware/security');
 const { triggerOrderEvent } = require('../services/integrations');
 const { sendOrderNotification, clearBadgeForUser } = require('../services/pushNotification');
+
+// Lazy-load multer & storageService — only when proof upload endpoint is hit
+// (avoids pulling in sharp at startup which requires Node >= 20)
+function getProofUpload() {
+  const multer = require('multer');
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) cb(null, true);
+      else cb(new Error('Hanya JPEG/PNG/WebP'));
+    },
+  });
+}
 
 // Valid order status transitions
 const ORDER_STATUS_TRANSITIONS = {
@@ -1326,6 +1342,42 @@ router.get('/:id/points-preview',
     } catch (error) {
       console.error('Points preview error:', error);
       res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// POST /:id/payment-proof — upload bukti pembayaran
+router.post('/:id/payment-proof',
+  authenticate,
+  (req, res, next) => getProofUpload().single('proof')(req, res, next),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!req.file) return res.status(400).json({ error: 'File wajib diupload' });
+
+      const [[order]] = await db.query('SELECT id FROM orders WHERE id = ?', [id]);
+      if (!order) return res.status(404).json({ error: 'Order tidak ditemukan' });
+
+      const ext = req.file.mimetype === 'image/png' ? '.png' : '.jpg';
+      const filename = `proof_${id}_${uuidv4()}${ext}`;
+
+      const storageService = require('../services/StorageService');
+      let saved;
+      try {
+        saved = await storageService.save(filename, req.file.buffer, req.file.mimetype);
+      } catch (e) {
+        saved = await storageService.saveLocal(filename, req.file.buffer);
+      }
+
+      await db.query(
+        'UPDATE orders SET payment_proof_url = ?, payment_proof_storage = ? WHERE id = ?',
+        [saved.url, saved.storage_type, id]
+      );
+
+      res.json({ proof_url: saved.url, storage_type: saved.storage_type });
+    } catch (e) {
+      console.error('payment-proof error:', e);
+      res.status(500).json({ error: e.message });
     }
   }
 );

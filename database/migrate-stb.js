@@ -518,6 +518,13 @@ const MIGRATIONS = [
     ],
   },
   {
+    id: '059_orders_payment_proof',
+    statements: [
+      `ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url VARCHAR(500) DEFAULT NULL`,
+      `ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_storage VARCHAR(10) DEFAULT NULL`,
+    ],
+  },
+  {
     id: '058_activity_logs_columns',
     statements: [
       `ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS table_name VARCHAR(100)`,

@@ -283,6 +283,8 @@ async function start() {
   await initDB();
   if (process.env.NODE_ENV !== 'test') {
     app.listen(PORT, '0.0.0.0', () => console.log(`Cafe Backend running on port ${PORT}`));
+    const { startProofSync } = require('./services/proofSyncService');
+    startProofSync();
   }
 }
 

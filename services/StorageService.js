@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const sharp = require('sharp');
+let sharp; try { sharp = require('sharp'); } catch { sharp = null; }
 
 class StorageService {
   constructor() {

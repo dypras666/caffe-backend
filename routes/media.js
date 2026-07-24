@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
-const sharp = require('sharp');
+let sharp; try { sharp = require('sharp'); } catch { sharp = null; }
 const { param, query, body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authenticate, authorize, can } = require('../middleware/auth');
@@ -45,7 +45,7 @@ const logActivity = async (userId, action, recordId, oldValues, newValues) => {
 
 async function compressToWebp(imagePath) {
   const ext = path.extname(imagePath).toLowerCase();
-  if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+  if (sharp && ['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
     const webpFilename = `${path.basename(imagePath, ext)}.webp`;
     const webpPath = path.join(path.dirname(imagePath), webpFilename);
     await sharp(imagePath)
@@ -65,10 +65,12 @@ async function processAndSave(filename, tempPath, mimetype) {
 
   if (isImage) {
     try {
-      const webpFilename = `${path.basename(filename, path.extname(filename))}.webp`;
-      finalBuffer = await sharp(tempPath).webp({ quality: 80 }).toBuffer();
-      finalFilename = webpFilename;
-      finalMime = 'image/webp';
+      if (sharp) {
+        const webpFilename = `${path.basename(filename, path.extname(filename))}.webp`;
+        finalBuffer = await sharp(tempPath).webp({ quality: 80 }).toBuffer();
+        finalFilename = webpFilename;
+        finalMime = 'image/webp';
+      } else { throw new Error('sharp unavailable'); }
     } catch {
       finalBuffer = fs.readFileSync(tempPath);
       finalFilename = filename;
