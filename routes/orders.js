@@ -180,7 +180,7 @@ router.get('/',
   authorize('admin', 'kasir', 'waiter'),
   [
     query('page').optional().isInt({ min: 1 }),
-    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('limit').optional().isInt({ min: 1, max: 500 }),
     query('status').optional().isIn(['pending', 'preparing', 'ready', 'completed', 'cancelled']),
     query('payment_status').optional().isIn(['pending', 'paid', 'partial', 'refund']),
     query('order_type').optional().isIn(['dine-in', 'takeaway', 'delivery']),
@@ -268,7 +268,7 @@ router.get('/',
 
       const [orders] = await db.query(
         `SELECT o.id, o.order_number, o.customer_name, o.customer_email, o.customer_phone,
-                o.table_number, o.order_type, o.subtotal, o.tax, o.discount, o.total,
+                o.table_id, o.table_number, o.order_type, o.subtotal, o.tax, o.discount, o.total,
                 o.payment_method, o.payment_status, o.order_status, o.notes,
                 o.served_by, u.name AS served_by_name, o.branch_id, b.name AS branch_name,
                 o.created_at, o.updated_at
@@ -760,10 +760,7 @@ router.put('/:id/payment',
     body('payment_status')
       .isIn(['pending', 'paid', 'partial', 'refund'])
       .withMessage('Invalid payment status'),
-    body('payment_method')
-      .optional()
-      .isIn(['cash', 'card', 'qris', 'transfer'])
-      .withMessage('Invalid payment method'),
+    body('payment_method').optional().isLength({ max: 50 }),
   ],
   async (req, res) => {
     try {
@@ -791,12 +788,29 @@ router.put('/:id/payment',
         return res.status(403).json({ error: 'Access denied: not your branch' });
       }
 
+      const { cash_received, change_amount } = req.body;
+
       const updates = ['payment_status = ?'];
       const values = [payment_status];
 
       if (payment_method) {
         updates.push('payment_method = ?');
         values.push(payment_method);
+      }
+
+      // Auto-complete order when payment is made
+      if (payment_status === 'paid') {
+        updates.push('order_status = ?');
+        values.push('completed');
+      }
+
+      if (cash_received != null) {
+        updates.push('cash_received = ?');
+        values.push(Number(cash_received));
+      }
+      if (change_amount != null) {
+        updates.push('change_amount = ?');
+        values.push(Number(change_amount));
       }
 
       values.push(orderId);
