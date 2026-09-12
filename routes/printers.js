@@ -14,16 +14,16 @@ router.get('/', authenticate, async (req, res) => {
 
 // POST /api/printers
 router.post('/', authenticate, authorize('admin'), async (req, res) => {
-  const { name, type, connection, ip, port, paper_width, char_per_line, is_default, is_active, auto_cut, header_text, footer_text, sort_order } = req.body;
+  const { name, type, connection, ip, port, paper_width, char_per_line, is_default, is_active, auto_cut, header_text, footer_text, sort_order, bluetooth_device_id, usb_vendor_id, usb_product_id } = req.body;
   if (!name) return res.status(400).json({ error: 'Nama printer wajib' });
   try {
     if (is_default) await db.query('UPDATE printers SET is_default = 0 WHERE type = ?', [type || 'receipt']);
     const [r] = await db.query(
-      `INSERT INTO printers (name, type, connection, ip, port, paper_width, char_per_line, is_default, is_active, auto_cut, header_text, footer_text, sort_order)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO printers (name, type, connection, ip, port, paper_width, char_per_line, is_default, is_active, auto_cut, header_text, footer_text, sort_order, bluetooth_device_id, usb_vendor_id, usb_product_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [name, type || 'receipt', connection || 'browser', ip || null, port || 9100, paper_width || '80mm',
        char_per_line || 42, is_default ? 1 : 0, is_active !== false ? 1 : 0, auto_cut !== false ? 1 : 0,
-       header_text || null, footer_text || null, sort_order || 0]
+       header_text || null, footer_text || null, sort_order || 0, bluetooth_device_id || null, usb_vendor_id || null, usb_product_id || null]
     );
     const [[printer]] = await db.query('SELECT * FROM printers WHERE id = ?', [r.insertId]);
     await audit({ userId: req.user.id, action: 'create_printer', tableName: 'printers', recordId: r.insertId, newValues: { name, type }, description: `Tambah printer: ${name}` });
@@ -33,7 +33,7 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
 
 // PUT /api/printers/:id
 router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
-  const { name, type, connection, ip, port, paper_width, char_per_line, is_default, is_active, auto_cut, header_text, footer_text, sort_order } = req.body;
+  const { name, type, connection, ip, port, paper_width, char_per_line, is_default, is_active, auto_cut, header_text, footer_text, sort_order, bluetooth_device_id, usb_vendor_id, usb_product_id } = req.body;
   try {
     const [[existing]] = await db.query('SELECT * FROM printers WHERE id = ?', [req.params.id]);
     if (!existing) return res.status(404).json({ error: 'Printer tidak ditemukan' });
@@ -51,6 +51,9 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
     if (header_text !== undefined) { fields.push('header_text=?'); vals.push(header_text); }
     if (footer_text !== undefined) { fields.push('footer_text=?'); vals.push(footer_text); }
     if (sort_order !== undefined) { fields.push('sort_order=?'); vals.push(sort_order); }
+    if (bluetooth_device_id !== undefined) { fields.push('bluetooth_device_id=?'); vals.push(bluetooth_device_id); }
+    if (usb_vendor_id !== undefined) { fields.push('usb_vendor_id=?'); vals.push(usb_vendor_id); }
+    if (usb_product_id !== undefined) { fields.push('usb_product_id=?'); vals.push(usb_product_id); }
     if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
     vals.push(req.params.id);
     await db.query(`UPDATE printers SET ${fields.join(',')} WHERE id=?`, vals);
