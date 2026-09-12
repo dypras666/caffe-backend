@@ -82,7 +82,7 @@ router.get('/', optionalAuth, async (req, res) => {
       post.tags = tags;
 
       const [gallery] = await db.query(
-        'SELECT * FROM post_galleries WHERE post_id = ? ORDER BY sort_order',
+        'SELECT id, post_id, url AS image_url, sort_order FROM post_galleries WHERE post_id = ? ORDER BY sort_order',
         [post.id]
       );
       post.gallery = gallery;
@@ -252,7 +252,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     post.tags = tags;
 
     const [gallery] = await db.query(
-      'SELECT * FROM post_galleries WHERE post_id = ? ORDER BY sort_order', [post.id]
+      'SELECT id, post_id, url AS image_url, sort_order FROM post_galleries WHERE post_id = ? ORDER BY sort_order', [post.id]
     );
     post.gallery = gallery;
 
@@ -310,7 +310,7 @@ router.post('/',
       // Gallery
       if (Array.isArray(gallery) && gallery.length > 0) {
         const gVals = gallery.map((url, i) => [insertId, url, i]);
-        await db.query('INSERT INTO post_galleries (post_id, image_url, sort_order) VALUES ?', [gVals]);
+        await db.query('INSERT INTO post_galleries (post_id, url, sort_order) VALUES ?', [gVals]);
       }
 
       res.status(201).json({ message: 'Post created', post: { id: insertId, slug } });
@@ -373,7 +373,7 @@ router.put('/:id',
       await db.query('DELETE FROM post_galleries WHERE post_id = ?', [id]);
       if (Array.isArray(gallery) && gallery.length > 0) {
         const gVals = gallery.map((url, i) => [id, url, i]);
-        await db.query('INSERT INTO post_galleries (post_id, image_url, sort_order) VALUES ?', [gVals]);
+        await db.query('INSERT INTO post_galleries (post_id, url, sort_order) VALUES ?', [gVals]);
       }
 
       res.json({ message: 'Post updated', post: { id, slug } });
