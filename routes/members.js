@@ -66,7 +66,7 @@ router.get('/qr',
       }
 
       let baseUrl = await getSetting('member_qr_base_url', '');
-      if (!baseUrl) {
+      if (!baseUrl || baseUrl.includes('localhost:517')) {
         const origin = req.headers.origin || (req.headers.host ? 'https://' + req.headers.host : '');
         if (origin) {
           baseUrl = origin.replace('office-', '').replace('admin.', '');

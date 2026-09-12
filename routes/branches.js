@@ -121,16 +121,18 @@ router.post('/qr/generate', authenticate, authorize('admin', 'kasir'), async (re
 
     // Get base_url from settings if not provided
     let finalBaseUrl = base_url;
-    if (!finalBaseUrl) {
+    if (!finalBaseUrl || finalBaseUrl.includes('localhost:517')) {
       const [[setting]] = await db.query('SELECT setting_value FROM system_settings WHERE setting_key="qr_base_url"');
-      finalBaseUrl = setting?.setting_value || '';
-      if (!finalBaseUrl) {
+      let dbUrl = setting?.setting_value || '';
+      if (!dbUrl || dbUrl.includes('localhost:517')) {
         const origin = req.headers.origin || (req.headers.host ? 'https://' + req.headers.host : '');
         if (origin) {
           finalBaseUrl = origin.replace('office-', '').replace('admin.', '');
         } else {
           finalBaseUrl = 'http://localhost:5174';
         }
+      } else {
+        finalBaseUrl = dbUrl;
       }
     }
 
