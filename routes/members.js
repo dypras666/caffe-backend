@@ -65,7 +65,15 @@ router.get('/qr',
         return res.status(400).json({ error: 'No member number assigned to this account' });
       }
 
-      const baseUrl = await getSetting('member_qr_base_url', 'http://localhost:5174');
+      let baseUrl = await getSetting('member_qr_base_url', '');
+      if (!baseUrl) {
+        const origin = req.headers.origin || (req.headers.host ? 'https://' + req.headers.host : '');
+        if (origin) {
+          baseUrl = origin.replace('office-', '').replace('admin.', '');
+        } else {
+          baseUrl = 'http://localhost:5174';
+        }
+      }
       const qr_url = `${baseUrl}/member?m=${user.member_number}`;
 
       res.json({ qr_url, member_number: user.member_number, name: user.name });

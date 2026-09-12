@@ -123,7 +123,15 @@ router.post('/qr/generate', authenticate, authorize('admin', 'kasir'), async (re
     let finalBaseUrl = base_url;
     if (!finalBaseUrl) {
       const [[setting]] = await db.query('SELECT setting_value FROM system_settings WHERE setting_key="qr_base_url"');
-      finalBaseUrl = setting?.setting_value || 'http://localhost:5174';
+      finalBaseUrl = setting?.setting_value || '';
+      if (!finalBaseUrl) {
+        const origin = req.headers.origin || (req.headers.host ? 'https://' + req.headers.host : '');
+        if (origin) {
+          finalBaseUrl = origin.replace('office-', '').replace('admin.', '');
+        } else {
+          finalBaseUrl = 'http://localhost:5174';
+        }
+      }
     }
 
     // Generate unique token for dynamic QR
