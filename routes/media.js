@@ -140,6 +140,39 @@ router.get('/',
   }
 );
 
+// Proxy stream to hide S3 URL
+router.get('/f/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const [rows] = await db.query('SELECT * FROM media WHERE file_path = ? OR file_name = ? LIMIT 1', [filename, filename]);
+    
+    if (!rows.length) {
+      return res.status(404).send('File not found');
+    }
+    
+    const f = rows[0];
+    const url = f.url || await storageService.getFileUrl(f.file_path, f.storage_type).catch(() => null);
+    
+    if (!url) return res.status(404).send('File not found');
+
+    if (url.startsWith('http')) {
+      const response = await fetch(url);
+      if (!response.ok) return res.status(404).send('File not found on storage');
+      
+      res.setHeader('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
+      const { Readable } = require('stream');
+      Readable.fromWeb(response.body).pipe(res);
+    } else {
+      // Local file
+      const path = require('path');
+      res.sendFile(path.join(__dirname, '..', url));
+    }
+  } catch (error) {
+    console.error('Proxy error:', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
 // POST /upload — single file (backward compat)
 router.post('/upload',
   authenticate,
