@@ -533,6 +533,14 @@ const MIGRATIONS = [
       `ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS new_values JSON`,
     ],
   },
+  {
+    id: '059_activity_logs_audit_columns',
+    statements: [
+      `ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS severity VARCHAR(20) DEFAULT 'info'`,
+      `ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS module VARCHAR(50)`,
+      `ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT`
+    ],
+  },
 ];
 
 async function run(exitAfter = true) {

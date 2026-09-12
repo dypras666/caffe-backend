@@ -307,16 +307,30 @@ router.get('/status', authenticate, async (req, res) => {
 // ─── GET /api/mobile/sync/items ──────────────────────────────────────────────
 router.get('/items', authenticate, async (req, res) => {
   const { device_id, status } = req.query;
-  if (!device_id) return res.status(400).json({ error: 'device_id wajib' });
+  
+  if (!device_id && (!req.user || req.user.role !== 'admin')) {
+    return res.status(400).json({ error: 'device_id wajib' });
+  }
 
-  let q = 'SELECT id, local_id, entity_type, status, attempts, server_id, server_ref, error_msg, created_at, processed_at FROM mobile_sync_queue WHERE device_id=?';
-  const params = [device_id];
-  if (status) { q += ' AND status=?'; params.push(status); }
-  q += ' ORDER BY created_at DESC LIMIT 100';
+  let q = 'SELECT id, device_id, local_id, entity_type, status, attempts, server_id, server_ref, error_msg, created_at, processed_at FROM mobile_sync_queue WHERE 1=1';
+  const params = [];
+
+  if (device_id && device_id !== 'all') { 
+    q += ' AND device_id=?'; 
+    params.push(device_id); 
+  }
+  
+  if (status && status !== 'all') { 
+    q += ' AND status=?'; 
+    params.push(status); 
+  }
+  
+  q += ' ORDER BY created_at DESC LIMIT 500';
 
   const [items] = await db.query(q, params);
   res.json({ items });
 });
+
 
 // ─── POST /api/mobile/sync/:id/retry ─────────────────────────────────────────
 router.post('/:id/retry', authenticate, async (req, res) => {

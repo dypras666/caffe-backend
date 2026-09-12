@@ -6,6 +6,14 @@ const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
 const { sanitizeInput } = require('../middleware/security');
 const { triggerBookingEvent } = require('../services/integrations');
 
+let hasOldBookingCols = null;
+const checkOldCols = async () => {
+  if (hasOldBookingCols !== null) return hasOldBookingCols;
+  const [cols] = await db.query("SHOW COLUMNS FROM bookings LIKE 'customer_name'");
+  hasOldBookingCols = cols.length > 0;
+  return hasOldBookingCols;
+};
+
 // Helper: sequential booking number
 const generateBookingNumber = async () => {
   const conn = await db.getConnection();
@@ -106,6 +114,7 @@ router.get('/',
       const [bookings] = await db.query(
         `SELECT b.id, COALESCE(b.customer_name, b.name) AS name, COALESCE(b.customer_email, b.email) AS email, COALESCE(b.customer_phone, b.phone) AS phone, b.booking_date, b.booking_time, COALESCE(b.pax, b.guests) AS guests,
                 b.table_number, b.special_request, b.status, b.branch_id, b.created_at, b.updated_at,
+                b.dp_amount, b.total_amount, b.payment_status,
                 br.name AS branch_name
          ${baseFrom} ${baseJoins}
          ${baseWhere} ORDER BY b.booking_date DESC, b.booking_time DESC LIMIT ? OFFSET ?`,
@@ -142,6 +151,7 @@ router.get('/:id',
       const [bookings] = await db.query(
         `SELECT b.id, COALESCE(b.customer_name, b.name) AS name, COALESCE(b.customer_email, b.email) AS email, COALESCE(b.customer_phone, b.phone) AS phone, b.booking_date, b.booking_time, COALESCE(b.pax, b.guests) AS guests,
                 b.table_number, b.special_request, b.status, b.branch_id, b.created_at, b.updated_at,
+                b.dp_amount, b.total_amount, b.payment_status,
                 br.name AS branch_name
          FROM bookings b
          LEFT JOIN branches br ON br.id = b.branch_id
@@ -193,7 +203,7 @@ router.post('/',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { name, email, phone, booking_date, booking_time, guests, branch_id, special_request } = req.body;
+      const { name, email, phone, booking_date, booking_time, guests, branch_id, special_request, items } = req.body;
 
       // Prevent duplicate booking for same email/date/time
       const [existing] = await db.query(
@@ -207,6 +217,14 @@ router.post('/',
         });
       }
 
+      // Calculate items total
+      let itemsTotal = 0;
+      if (items && Array.isArray(items)) {
+        for (const item of items) {
+          itemsTotal += (item.quantity || 1) * (item.unit_price || 0);
+        }
+      }
+
       // Fetch DP settings
       const requireDp = await getBookingSetting('booking_require_dp');
       const dpType = await getBookingSetting('booking_dp_type') || 'percent';
@@ -217,31 +235,57 @@ router.post('/',
       const isPriority = req.user && req.user.is_priority;
       const needDp = requireDp === 'true' && !isPriority;
 
-      // Calculate DP amount if needed (based on guests × avg price or flat amount)
+      // Calculate DP amount if needed
       let dpRequired = 0;
       if (needDp) {
         if (dpType === 'fixed') dpRequired = dpAmount;
-        else dpRequired = dpAmount; // Percent mode: amount is the flat DP Rp for now (can be extended)
+        else dpRequired = dpAmount; // Currently flat amount for percent too
       }
 
       const bookingNumber = await generateBookingNumber();
       const userId = req.user ? req.user.id : null;
 
-      const [result] = await db.query(
-        `INSERT INTO bookings (booking_number, name, email, phone, booking_date, booking_time, guests,
+      const useOld = await checkOldCols();
+      let sql, params;
+      if (useOld) {
+        sql = `INSERT INTO bookings (booking_number, name, email, phone, booking_date, booking_time, guests,
+           branch_id, special_request, status, user_id, dp_amount, payment_status, total_amount,
+           customer_name, customer_email, customer_phone, pax)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`;
+        params = [bookingNumber, name, email, phone, booking_date, booking_time, guests,
+         branch_id || null, special_request || null, userId, dpRequired, dpRequired > 0 ? 'unpaid' : 'unpaid',
+         itemsTotal, name, email, phone, guests];
+      } else {
+        sql = `INSERT INTO bookings (booking_number, name, email, phone, booking_date, booking_time, guests,
            branch_id, special_request, status, user_id, dp_amount, payment_status, total_amount)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, 0)`,
-        [bookingNumber, name, email, phone, booking_date, booking_time, guests,
-         branch_id || null, special_request || null, userId, dpRequired, dpRequired > 0 ? 'unpaid' : 'unpaid']
-      );
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`;
+        params = [bookingNumber, name, email, phone, booking_date, booking_time, guests,
+         branch_id || null, special_request || null, userId, dpRequired, dpRequired > 0 ? 'unpaid' : 'unpaid', itemsTotal];
+      }
+
+      const [result] = await db.query(sql, params);
+      const bookingId = result.insertId;
+
+      // Insert pre-order items if any
+      if (items && Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          const qty = item.quantity || 1;
+          const price = item.unit_price || 0;
+          await db.query(
+            `INSERT INTO booking_items (booking_id, product_id, product_name, quantity, unit_price, subtotal, notes)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [bookingId, item.product_id, item.product_name, qty, price, qty * price, item.notes || null]
+          );
+        }
+      }
 
       const actorId = req.user ? req.user.id : null;
-      await logActivity(actorId, 'create_booking', result.insertId, null, { name, email, booking_date, booking_time });
+      await logActivity(actorId, 'create_booking', bookingId, null, { name, email, booking_date, booking_time });
 
       res.status(201).json({
         message: 'Booking berhasil dibuat',
         booking: {
-          id: result.insertId,
+          id: bookingId,
           booking_number: bookingNumber,
           name,
           email,
@@ -258,6 +302,48 @@ router.post('/',
       });
     } catch (error) {
       console.error('Create booking error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// POST /:id/payment — admin/kasir: process booking payment
+router.post('/:id/payment',
+  authenticate,
+  authorize('admin', 'kasir'),
+  sanitizeInput,
+  [
+    param('id').isInt({ min: 1 }).withMessage('Invalid booking ID'),
+    body('payment_status').isIn(['unpaid', 'partial', 'paid', 'refunded']).withMessage('Invalid payment_status'),
+    body('dp_amount').optional().isFloat({ min: 0 }).toFloat(),
+    body('total_amount').optional().isFloat({ min: 0 }).toFloat()
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+      const bookingId = req.params.id;
+      const { payment_status, dp_amount = 0, total_amount = 0 } = req.body;
+
+      const [bookings] = await db.query('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+      if (bookings.length === 0) return res.status(404).json({ error: 'Booking not found' });
+      
+      const oldBooking = bookings[0];
+
+      await db.query(
+        'UPDATE bookings SET payment_status = ?, dp_amount = ?, total_amount = ? WHERE id = ?',
+        [payment_status, dp_amount, total_amount, bookingId]
+      );
+
+      await logActivity(req.user.id, 'payment_booking', bookingId, 
+        { payment_status: oldBooking.payment_status, dp_amount: oldBooking.dp_amount, total_amount: oldBooking.total_amount },
+        { payment_status, dp_amount, total_amount }
+      );
+
+      res.json({ success: true, message: 'Payment updated successfully' });
+    } catch (error) {
+      console.error('Update booking payment error:', error);
       res.status(500).json({ error: 'Server error' });
     }
   }
@@ -364,5 +450,20 @@ router.delete('/:id',
     }
   }
 );
+
+// GET /:id/items — get pre-ordered items for a booking
+router.get('/:id/items', authenticate, async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+    const [items] = await db.query(
+      'SELECT * FROM booking_items WHERE booking_id = ? ORDER BY id ASC',
+      [bookingId]
+    );
+    res.json(items);
+  } catch (error) {
+    console.error('Get booking items error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 module.exports = router;

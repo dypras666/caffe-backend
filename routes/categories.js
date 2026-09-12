@@ -52,6 +52,9 @@ router.get('/', async (req, res) => {
     let query = `
       SELECT
         c.*,
+        c.image_url AS icon,
+        c.display_order AS sort_order,
+        IF(c.status = 'active', 1, 0) AS is_active,
         p.name AS parent_name,
         COUNT(DISTINCT pr.id) AS product_count
       FROM categories c
@@ -97,6 +100,9 @@ router.get('/:id',
 
       const [rows] = await db.query(
         `SELECT c.*, p.name AS parent_name,
+                c.image_url AS icon,
+                c.display_order AS sort_order,
+                IF(c.status = 'active', 1, 0) AS is_active,
                 COUNT(DISTINCT pr.id) AS product_count
          FROM categories c
          LEFT JOIN categories p ON c.parent_id = p.id
@@ -126,11 +132,10 @@ router.post('/',
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('description').optional().trim(),
-    body('image').optional().trim(),
     body('icon').optional().trim(),
     body('parent_id').optional({ nullable: true }).isInt({ min: 1 }).withMessage('parent_id must be a valid integer'),
-    body('display_order').optional().isInt({ min: 0 }),
-    body('status').optional().isIn(['active', 'inactive']).withMessage('status must be active or inactive'),
+    body('sort_order').optional().isInt({ min: 0 }),
+    body('is_active').optional().isBoolean(),
     body('slug').optional().trim(),
   ],
   async (req, res) => {
@@ -140,7 +145,7 @@ router.post('/',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { name, description, image, icon, parent_id, display_order, status, slug } = req.body;
+      const { name, description, icon, parent_id, sort_order, is_active, slug } = req.body;
 
       // Validate parent exists if provided
       if (parent_id) {
@@ -153,18 +158,19 @@ router.post('/',
       const baseSlug = slug ? generateSlug(slug) : generateSlug(name);
       const finalSlug = await uniqueSlug(baseSlug);
 
+      const status = is_active !== false && is_active !== 'false' && is_active !== 0 ? 'active' : 'inactive';
+
       const [result] = await db.query(
-        `INSERT INTO categories (name, slug, description, image, icon, parent_id, display_order, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO categories (name, slug, description, image_url, parent_id, display_order, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           name,
           finalSlug,
           description || null,
-          image || null,
           icon || null,
           parent_id || null,
-          display_order != null ? display_order : 0,
-          status || 'active',
+          sort_order != null ? sort_order : 0,
+          status,
         ]
       );
 
@@ -190,11 +196,10 @@ router.put('/:id',
     param('id').isInt({ min: 1 }).withMessage('Invalid category ID'),
     body('name').optional().trim().notEmpty().withMessage('Name cannot be empty'),
     body('description').optional({ nullable: true }).trim(),
-    body('image').optional({ nullable: true }).trim(),
     body('icon').optional({ nullable: true }).trim(),
     body('parent_id').optional({ nullable: true }),
-    body('display_order').optional().isInt({ min: 0 }),
-    body('status').optional().isIn(['active', 'inactive']).withMessage('status must be active or inactive'),
+    body('sort_order').optional().isInt({ min: 0 }),
+    body('is_active').optional().isBoolean(),
     body('slug').optional().trim(),
   ],
   async (req, res) => {
@@ -225,7 +230,7 @@ router.put('/:id',
         }
       }
 
-      const allowedFields = ['name', 'description', 'image', 'icon', 'parent_id', 'display_order', 'status'];
+      const allowedFields = ['name', 'description', 'parent_id'];
       const updates = [];
       const values = [];
 
@@ -234,6 +239,19 @@ router.put('/:id',
           updates.push(`${field} = ?`);
           values.push(req.body[field] === '' ? null : req.body[field]);
         }
+      }
+
+      if (req.body.icon !== undefined) {
+        updates.push(`image_url = ?`);
+        values.push(req.body.icon === '' ? null : req.body.icon);
+      }
+      if (req.body.sort_order !== undefined) {
+        updates.push(`display_order = ?`);
+        values.push(req.body.sort_order);
+      }
+      if (req.body.is_active !== undefined) {
+        updates.push(`status = ?`);
+        values.push(req.body.is_active !== false && req.body.is_active !== 'false' && req.body.is_active !== 0 ? 'active' : 'inactive');
       }
 
       // Handle slug update

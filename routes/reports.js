@@ -53,6 +53,10 @@ router.get('/summary',
       const f6 = []; const extra6 = applyFilters(f6, branch_id, cashier_id);
       const f7 = []; const extra7 = applyFilters(f7, branch_id, cashier_id);
       const f8 = []; const extra8 = applyFilters(f8, branch_id, cashier_id);
+      
+      const fBooking = [];
+      let extraBooking = '';
+      if (branch_id) { extraBooking += ' AND branch_id = ?'; fBooking.push(branch_id); }
 
       const [
         [revenueRows],
@@ -63,6 +67,7 @@ router.get('/summary',
         [topProductRows],
         [prevRows],
         [itemsRows],
+        [bookingRevRows],
       ] = await Promise.all([
         // Total revenue + total orders
         db.query(
@@ -158,9 +163,21 @@ router.get('/summary',
              AND ${REVENUE_FILTER}${extra8}`,
           [date_from, date_to, ...f8]
         ),
+
+        // Booking revenue
+        db.query(
+          `SELECT COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total_amount ELSE dp_amount END), 0) AS booking_revenue
+           FROM bookings
+           WHERE DATE(created_at) BETWEEN ? AND ?
+             AND payment_status IN ('paid', 'partial') AND status != 'cancelled' ${extraBooking}`,
+          [date_from, date_to, ...fBooking]
+        ),
       ]);
 
-      const total_revenue = parseFloat(revenueRows[0].total_revenue);
+      let total_revenue = parseFloat(revenueRows[0].total_revenue);
+      const booking_revenue = parseFloat(bookingRevRows[0].booking_revenue);
+      total_revenue += booking_revenue;
+      
       const total_orders = parseInt(revenueRows[0].total_orders, 10);
       const avg_order_value = total_orders > 0
         ? parseFloat((total_revenue / total_orders).toFixed(2))

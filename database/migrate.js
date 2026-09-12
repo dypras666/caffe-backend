@@ -894,6 +894,21 @@ const MIGRATIONS = [
       WHERE file_name IS NULL OR file_path IS NULL;
     `,
   },
+  {
+    id: '037b_relax_media_filename',
+    optional: true,
+    sql: `ALTER TABLE media MODIFY filename VARCHAR(255) NULL;`
+  },
+  {
+    id: '037c_relax_media_url',
+    optional: true,
+    sql: `ALTER TABLE media MODIFY url TEXT NULL;`
+  },
+  {
+    id: '037d_relax_media_original_name',
+    optional: true,
+    sql: `ALTER TABLE media MODIFY original_name VARCHAR(255) NULL;`
+  },
 
   {
     id: '038_system_settings_pos_seed',
@@ -1125,7 +1140,7 @@ const MIGRATIONS = [
         ADD COLUMN IF NOT EXISTS maintenance_note TEXT,
         ADD COLUMN IF NOT EXISTS manual_close TINYINT(1) DEFAULT 0,
         ADD COLUMN IF NOT EXISTS auto_free_at TIMESTAMP NULL;
-      UPDATE tables SET table_number = CONCAT('A', LPAD(number, 2, '0')) WHERE table_number IS NULL AND number IS NOT NULL;
+      UPDATE tables SET table_number = CONCAT('A', LPAD(table_number, 2, '0')) WHERE table_number REGEXP '^[0-9]+$';
       UPDATE tables SET name = CONCAT('Meja ', IFNULL(table_number, id)) WHERE name IS NULL;
     `,
   },
@@ -1207,6 +1222,32 @@ const MIGRATIONS = [
       ) ENGINE=InnoDB;
     `,
   },
+  {
+    id: '058_bookings_payment_status_partial',
+    sql: `
+      ALTER TABLE bookings
+      MODIFY COLUMN payment_status ENUM('unpaid', 'partial', 'paid', 'refunded') DEFAULT 'unpaid';
+    `,
+  },
+  {
+    id: '059_create_booking_items',
+    sql: `
+      CREATE TABLE IF NOT EXISTS booking_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        booking_id INT NOT NULL,
+        product_id INT NOT NULL,
+        product_name VARCHAR(200) NOT NULL,
+        quantity INT DEFAULT 1,
+        unit_price DECIMAL(10, 2) NOT NULL,
+        subtotal DECIMAL(10, 2) NOT NULL,
+        notes TEXT,
+        variants_selected LONGTEXT,
+        addons_selected LONGTEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB;
+    `,
+  }
 ];
 
 async function run() {

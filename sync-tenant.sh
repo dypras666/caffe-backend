@@ -46,16 +46,16 @@ fi
 FILES=(
   server.js
   package.json
-  config/database.js
-  middleware/auth.js
-  middleware/audit.js
-  middleware/security.js
-  database/migrate.js
-  database/migrate-all.js
 )
 
-# All route files
-for f in routes/*.js; do FILES+=("$f"); done
+# Sync all JS files from essential directories (recursive)
+for d in config middleware database routes controllers services utils; do
+  if [ -d "$d" ]; then
+    while IFS= read -r f; do
+      FILES+=("$f")
+    done < <(find "$d" -type f -name "*.js")
+  fi
+done
 
 do_sync() {
   local slug=$1
@@ -67,15 +67,14 @@ do_sync() {
   if [ "$MIGRATE_ONLY" = true ]; then
     echo "  (skipping file sync — migrate only)"
   else
-    # Sync files
-    for f in "${FILES[@]}"; do
-      local remote="${dir}/${f}"
-      local remote_dir=$(dirname "$remote")
-      $SSH "mkdir -p ${remote_dir}" 2>/dev/null || true
-      $SCP "${SCRIPT_DIR}/${f}" "${SERVER}:${remote}" 2>/dev/null && \
-        echo "  ✓ ${f}" || echo "  ✗ ${f} (skip)"
-    done
+    # Sync files using tar to avoid SSH rate limits
+    echo "  📦 Packing files..."
+    tar -czf /tmp/cafe-backend-sync.tar.gz -T <(printf "%s\n" "${FILES[@]}")
+    $SCP /tmp/cafe-backend-sync.tar.gz "${SERVER}:/tmp/cafe-backend-sync-${slug}.tar.gz" 2>/dev/null
+    $SSH "mkdir -p ${dir} && tar -xzf /tmp/cafe-backend-sync-${slug}.tar.gz -C ${dir}"
+    echo "  ✓ All files synced"
   fi
+
 
   # Sync package.json then install any missing packages
   $SCP "${SCRIPT_DIR}/package.json" "${SERVER}:${dir}/package.json" 2>/dev/null || true
@@ -88,6 +87,10 @@ do_sync() {
     $SSH "cd ${dir} && node database/migrate.js" && \
       echo "  ✅ Migration done" || echo "  ❌ Migration failed"
   fi
+
+  echo "  ↻ Restarting service cafe-tenant-${slug}.service..."
+  $SSH "systemctl restart cafe-tenant-${slug}.service" && \
+    echo "  ✅ Service restarted" || echo "  ❌ Failed to restart service"
 }
 
 do_sync_all() {
