@@ -121,6 +121,38 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
 // ─── USERS — handled by routes/users.js (see routeNames) ─────────
 
+// Proxy stream to hide S3 URL
+app.get('/m/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const [rows] = await db.query('SELECT * FROM media WHERE file_path = ? OR file_name = ? LIMIT 1', [filename, filename]);
+    
+    if (!rows.length) {
+      return res.status(404).send('File not found');
+    }
+    
+    const f = rows[0];
+    const storageService = require('./services/storageService');
+    const url = f.url || await storageService.getFileUrl(f.file_path, f.storage_type).catch(() => null);
+    
+    if (!url) return res.status(404).send('File not found');
+
+    if (url.startsWith('http')) {
+      const axios = require('axios');
+      const response = await axios({ method: 'get', url: url, responseType: 'stream' });
+      res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
+      response.data.pipe(res);
+    } else {
+      // Local file
+      const path = require('path');
+      res.sendFile(path.join(__dirname, url));
+    }
+  } catch (error) {
+    console.error('Proxy error:', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
 // ─── DASHBOARD (public stats for gallery page) ──────────────────
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
