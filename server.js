@@ -280,9 +280,10 @@ app.post('/payment/callback/duitku', async (req, res) => {
 // ─── STATIC FILES ──────────────────────────────────────────────
 const publicDir = path.join(__dirname, 'public');
 app.use('/admin', express.static(path.join(publicDir, 'admin')));
-app.use('/assets', express.static(path.join(publicDir, 'admin/assets')));
-// Cafe Kasir web app
 app.use('/kasir', express.static(path.join(publicDir, 'kasir')));
+app.use('/assets', express.static(path.join(publicDir, 'assets')));
+app.use('/assets', express.static(path.join(publicDir, 'admin/assets')));
+app.use('/assets', express.static(path.join(publicDir, 'kasir/assets')));
 app.use(express.static(publicDir));
 
 // SPA fallback — NOT for API paths
