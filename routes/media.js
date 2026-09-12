@@ -124,10 +124,13 @@ router.get('/',
         [...params, limit, offset]
       );
 
-      const filesWithUrl = await Promise.all(files.map(async f => ({
-        ...f,
-        url: f.url || await storageService.getFileUrl(f.file_path, f.storage_type).catch(() => f.file_path),
-      })));
+      const filesWithUrl = await Promise.all(files.map(async f => {
+        let finalUrl = f.url;
+        if (!finalUrl || !finalUrl.startsWith('http')) {
+          finalUrl = await storageService.getFileUrl(f.file_path, f.storage_type).catch(() => f.file_path);
+        }
+        return { ...f, url: finalUrl };
+      }));
 
       res.json({ files: filesWithUrl, pagination: { total, page, limit, total_pages: Math.ceil(total / limit) } });
     } catch (error) {
