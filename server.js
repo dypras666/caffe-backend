@@ -132,7 +132,7 @@ app.get('/m/:filename', async (req, res) => {
     }
     
     const f = rows[0];
-    const storageService = require('./services/storageService');
+    const storageService = require('./services/StorageService');
     const url = f.url || await storageService.getFileUrl(f.file_path, f.storage_type).catch(() => null);
     
     if (!url) return res.status(404).send('File not found');
