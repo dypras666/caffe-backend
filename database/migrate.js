@@ -1233,6 +1233,13 @@ const MIGRATIONS = [
     `,
   },
   {
+      {
+    id: '060_add_voucher_description',
+    sql: `
+      ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS description TEXT AFTER name;
+    `,
+  },
+  {
     id: '059_create_booking_items',
     sql: `
       CREATE TABLE IF NOT EXISTS booking_items (
