@@ -1240,6 +1240,15 @@ const MIGRATIONS = [
     `,
   },
   {
+      {
+    id: '061_add_voucher_created_by',
+    sql: `
+      ALTER TABLE vouchers 
+        ADD COLUMN IF NOT EXISTS created_by INT DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+    `,
+  },
+  {
     id: '059_create_booking_items',
     sql: `
       CREATE TABLE IF NOT EXISTS booking_items (
