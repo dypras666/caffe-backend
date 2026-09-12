@@ -541,6 +541,32 @@ const MIGRATIONS = [
       `ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT`
     ],
   },
+  {
+    id: '060_navigation_menus',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS navigation_menus (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        label VARCHAR(100) NOT NULL,
+        url VARCHAR(500) NOT NULL,
+        icon VARCHAR(50) DEFAULT NULL,
+        target VARCHAR(20) DEFAULT '_self',
+        sort_order INT DEFAULT 0,
+        parent_id INT DEFAULT NULL,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT IGNORE INTO navigation_menus (id, label, url, icon, sort_order, is_active) VALUES
+        (1, 'Home', '/#home', 'Home', 1, 1),
+        (2, 'Menu', '/#menu', 'UtensilsCrossed', 2, 1),
+        (3, 'Blog', '/blog', 'FileText', 3, 1),
+        (4, 'Virtual Tour', '/#tour', 'Eye', 4, 1),
+        (5, 'Brew Service', '/#brew', 'Coffee', 5, 1),
+        (6, 'Booking', '/#booking', 'CalendarCheck', 6, 1),
+        (7, 'Gallery', '/#gallery', 'Image', 7, 1),
+        (8, 'Contact', '/#contact', 'Phone', 8, 1)`,
+    ],
+  },
 ];
 
 async function run(exitAfter = true) {
