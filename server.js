@@ -148,9 +148,9 @@ app.post('/api/auth/reset-password', async (req, res) => {
 // ─── USERS — handled by routes/users.js (see routeNames) ─────────
 
 // Proxy stream to hide S3 URL
-app.get('/m/:filename(.*)', async (req, res) => {
+app.use('/m', async (req, res) => {
   try {
-    const filename = req.params.filename;
+    const filename = req.path.substring(1); // removes the leading slash
     const [rows] = await db.query('SELECT * FROM media WHERE file_path = ? OR file_name = ? LIMIT 1', [filename, filename]);
     
     if (!rows.length) {
