@@ -39,15 +39,21 @@ class StorageService {
   async loadConfig() {}
 
   async save(filename, buffer, contentType) {
+    const tenantSlug = process.env.TENANT_SLUG || 'default';
+    const namespacedFilename = `${tenantSlug}/${filename}`;
 
     if (this.driver === 's3') {
-      return this.saveS3(filename, buffer, contentType);
+      return this.saveS3(namespacedFilename, buffer, contentType);
     }
-    return this.saveLocal(filename, buffer);
+    return this.saveLocal(namespacedFilename, buffer);
   }
 
   async saveLocal(filename, buffer) {
     const filePath = path.join(this.localBasePath, filename);
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     fs.writeFileSync(filePath, buffer);
     return {
       url: `/uploads/${filename}`,
