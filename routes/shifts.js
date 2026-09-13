@@ -357,6 +357,65 @@ router.get('/:id/report', authenticate, authorize('admin', 'kasir'), async (req,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// ─── GET /api/shifts/:id/pre-close-summary ─────────────────
+router.get('/:id/pre-close-summary', authenticate, authorize('admin', 'kasir'), async (req, res) => {
+  try {
+    const [[shift]] = await db.query('SELECT * FROM shifts WHERE id = ?', [req.params.id]);
+    if (!shift) return res.status(404).json({ error: 'Shift tidak ditemukan' });
+
+    // 1. Revenue
+    const [[actuals]] = await db.query(
+      `SELECT
+         COUNT(*)                                                                AS total_orders,
+         COALESCE(SUM(total), 0)                                                 AS total_revenue,
+         COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END), 0) AS cash_revenue
+       FROM orders
+       WHERE shift_id = ? AND order_status NOT IN ('cancelled', 'deleted')
+         AND payment_status IN ('paid','partial')`,
+      [shift.id]
+    );
+
+    const cashRevenue = parseFloat(actuals.cash_revenue);
+    const expectedCash = parseFloat(shift.opening_cash) + cashRevenue;
+
+    // 2. Unpaid Orders
+    const [unpaid_orders] = await db.query(
+      `SELECT id, order_number, total, customer_name, table_number
+       FROM orders
+       WHERE shift_id = ? AND order_status NOT IN ('cancelled', 'deleted') AND payment_status = 'pending'`,
+      [shift.id]
+    );
+
+    // 3. In-Progress Orders
+    const [in_progress_orders] = await db.query(
+      `SELECT id, order_number, order_status, customer_name, table_number
+       FROM orders
+       WHERE shift_id = ? AND order_status IN ('pending', 'preparing', 'ready')`,
+      [shift.id]
+    );
+
+    // 4. Active Tables
+    const [active_tables] = await db.query(
+      `SELECT DISTINCT table_number, id, order_number
+       FROM orders
+       WHERE shift_id = ? AND table_id IS NOT NULL AND order_status NOT IN ('completed', 'cancelled', 'deleted')`,
+      [shift.id]
+    );
+
+    res.json({
+      summary: {
+        opening_cash: parseFloat(shift.opening_cash),
+        total_revenue: parseFloat(actuals.total_revenue),
+        cash_revenue: cashRevenue,
+        expected_cash: expectedCash,
+        unpaid_orders,
+        in_progress_orders,
+        active_tables
+      }
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 
 // ─── GET /api/shifts/:id — single shift ──────────────────────
 router.get('/:id', authenticate, authorize('admin', 'kasir'), async (req, res) => {
