@@ -255,6 +255,8 @@ router.put('/:id',
           updates.push(`${field} = ?`);
           if (field === 'auto_print' || field === 'is_active') {
             values.push(req.body[field] ? 1 : 0);
+          } else if (field === 'printer_id') {
+            values.push(req.body[field] === '' ? null : req.body[field]);
           } else {
             values.push(req.body[field]);
           }
