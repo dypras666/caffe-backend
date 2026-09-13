@@ -1,4 +1,6 @@
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
@@ -10,6 +12,11 @@ const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: true, credentials: true }
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
@@ -49,8 +56,27 @@ const authenticate = (req, res, next) => {
   }
 };
 
-// Make db available
-app.use((req, res, next) => { req.db = db; next(); });
+// Socket.IO Auth
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) return next(new Error('Authentication error'));
+  try {
+    socket.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch (err) {
+    next(new Error('Authentication error'));
+  }
+});
+
+io.on('connection', (socket) => {
+  socket.join('all'); // Join global room
+  if (socket.user.branch_id) {
+    socket.join(`branch_${socket.user.branch_id}`);
+  }
+});
+
+// Make db and io available
+app.use((req, res, next) => { req.db = db; req.io = io; next(); });
 
 // Health
 app.get('/api/health', (req, res) => {
@@ -122,9 +148,9 @@ app.post('/api/auth/reset-password', async (req, res) => {
 // ─── USERS — handled by routes/users.js (see routeNames) ─────────
 
 // Proxy stream to hide S3 URL
-app.get('/m/:filename', async (req, res) => {
+app.get('/m/*', async (req, res) => {
   try {
-    const { filename } = req.params;
+    const filename = req.params[0];
     const [rows] = await db.query('SELECT * FROM media WHERE file_path = ? OR file_name = ? LIMIT 1', [filename, filename]);
     
     if (!rows.length) {
@@ -315,7 +341,7 @@ app.get('/{*p}', (req, res) => {
 async function start() {
   await initDB();
   if (process.env.NODE_ENV !== 'test') {
-    app.listen(PORT, '0.0.0.0', () => console.log(`Cafe Backend running on port ${PORT}`));
+    server.listen(PORT, '0.0.0.0', () => console.log(`Cafe Backend running on port ${PORT}`));
     const { startProofSync } = require('./services/proofSyncService');
     startProofSync();
   }
