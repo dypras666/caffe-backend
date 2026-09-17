@@ -1233,19 +1233,27 @@ const MIGRATIONS = [
     `,
   },
   {
-      {
     id: '060_add_voucher_description',
     sql: `
       ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS description TEXT AFTER name;
     `,
   },
   {
-      {
     id: '061_add_voucher_created_by',
     sql: `
       ALTER TABLE vouchers 
         ADD COLUMN IF NOT EXISTS created_by INT DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+    `,
+  },
+  {
+    id: '062_add_feature_modules_settings',
+    sql: `
+      INSERT IGNORE INTO system_settings (setting_key, setting_value, setting_type, setting_group, label, is_public, sort_order) VALUES
+        ('hr_enabled',        'false', 'boolean', 'general', 'Aktifkan Modul HR (Absensi & Gaji)', 1, 99),
+        ('shift_enabled',     'false', 'boolean', 'pos',     'Aktifkan Modul Shift Kasir',         1, 99),
+        ('inventory_enabled', 'false', 'boolean', 'general', 'Aktifkan Stok & Inventory',          1, 99),
+        ('wifi_enabled',      'false', 'boolean', 'general', 'Aktifkan Modul WiFi Hotspot',        1, 99);
     `,
   },
   {

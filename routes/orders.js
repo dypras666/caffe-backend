@@ -400,6 +400,21 @@ router.get('/:id',
   }
 );
 
+// GET /qris/unique-code — Generate daily sequential unique code globally
+router.get('/qris/unique-code', authenticate, async (req, res) => {
+  try {
+    // Count today's orders globally to determine sequence without branch prefix
+    const [[{ count }]] = await db.query(
+      'SELECT COUNT(*) as count FROM orders WHERE DATE(created_at) = CURDATE()'
+    );
+    const sequence = count + 1;
+    res.json({ kode_unik: sequence });
+  } catch (error) {
+    console.error('Get QRIS unique code error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // POST / — create with items array, auto-generate order_number, calculate totals
 router.post('/',
   authenticate,
@@ -412,7 +427,7 @@ router.post('/',
     body('table_number').optional().trim(),
     body('table_id').optional({ nullable: true }).isInt({ min: 1 }),
     body('order_type').isIn(['dine-in', 'takeaway', 'delivery']).withMessage('Invalid order type'),
-    body('payment_method').isIn(['cash', 'card', 'qris', 'transfer', 'balance', 'pending']).withMessage('Invalid payment method'),
+    body('payment_method').optional(),
     body('notes').optional().trim(),
     body('discount').optional().isFloat({ min: 0 }).withMessage('Discount must be a non-negative number'),
     body('items').isArray({ min: 1 }).withMessage('items must be a non-empty array'),
@@ -442,6 +457,11 @@ router.post('/',
         items,
         voucher_code,
       } = req.body;
+
+      if (payment_method && !isNaN(Number(payment_method))) {
+        const [pmRows] = await db.query('SELECT code FROM payment_methods WHERE id = ?', [Number(payment_method)]);
+        if (pmRows.length > 0) payment_method = pmRows[0].code;
+      }
 
       // If table_id provided, fetch table_number and mark table as occupied
       let resolvedTableNumber = table_number || null;
@@ -480,7 +500,7 @@ router.post('/',
         const memberId = req.user.role === 'member' ? req.user.id : null;
         // orderId not yet known — pass null, will update usage record after INSERT
         const vResult = await redeemVoucher(
-          voucher_code, subtotal, effectiveBranchId, memberId, null, req.user.id
+          voucher_code, subtotal, effectiveBranchId, memberId, null, req.user.id, resolvedItems
         );
         if (!vResult.ok) {
           return res.status(400).json({ error: `Voucher: ${vResult.error}` });
@@ -628,6 +648,17 @@ router.post('/',
         total,
       }).catch(() => {});
 
+      if (req.io) {
+        req.io.to('all').emit('order_created', {
+          id: orderId,
+          order_number: orderNumber,
+          order_type,
+          table_number: resolvedTableNumber,
+          total,
+          branch_id: branchId
+        });
+      }
+
       res.status(201).json({
         message: 'Order created successfully',
         order: {
@@ -697,6 +728,10 @@ router.put('/:id/status',
       }
 
       await db.query('UPDATE orders SET order_status = ? WHERE id = ?', [newStatus, orderId]);
+
+      if (req.io) {
+        req.io.to('all').emit('order_updated', { id: orderId, status: newStatus });
+      }
 
       // Clear push notification badge when kasir starts processing order (pending → *)
       if (order.order_status === 'pending') {

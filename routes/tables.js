@@ -257,6 +257,7 @@ router.patch('/:id/status', authenticate, authorize('admin', 'kasir'), async (re
         [status, manual_close ? 1 : 0, maintenance_note || null, autoFreeAt, req.params.id]
       );
     }
+    if (req.io) req.io.to('all').emit('table_status_changed', { id: req.params.id, status });
     res.json({ message: 'Status updated', status, auto_free_at: autoFreeAt, manual_close: !!manual_close });
   } catch (err) {
     res.status(500).json({ error: err.message });

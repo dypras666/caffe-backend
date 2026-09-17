@@ -9,9 +9,16 @@ const { param, query, body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authenticate, authorize, can } = require('../middleware/auth');
 const storageService = require('../services/StorageService');
+const https = require('https');
+const http = require('http');
 
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'];
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 
+  'application/pdf', 
+  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+];
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.doc', '.docx', '.ppt', '.pptx'];
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
@@ -30,11 +37,30 @@ const fileFilter = (_req, file, cb) => {
   if (ALLOWED_MIME_TYPES.includes(file.mimetype) && ALLOWED_EXTENSIONS.includes(ext)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Allowed: jpg, png, gif, webp, pdf'), false);
+    cb(new Error('Invalid file type. Allowed: jpg, png, gif, webp, pdf, doc, docx, ppt, pptx'), false);
   }
 };
 
 const upload = multer({ storage, limits: { fileSize: MAX_FILE_SIZE }, fileFilter });
+
+// GET /api/media/proxy?url=
+router.get('/proxy', async (req, res) => {
+  const targetUrl = req.query.url;
+  if (!targetUrl) return res.status(400).json({ error: 'URL required' });
+  
+  const protocol = targetUrl.startsWith('https') ? https : http;
+  protocol.get(targetUrl, (proxyRes) => {
+    if (proxyRes.statusCode !== 200) {
+      return res.status(proxyRes.statusCode).json({ error: 'Failed to proxy' });
+    }
+    res.setHeader('Content-Type', proxyRes.headers['content-type']);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    proxyRes.pipe(res);
+  }).on('error', (err) => {
+    res.status(500).json({ error: err.message });
+  });
+});
 
 const logActivity = async (userId, action, recordId, oldValues, newValues) => {
   await db.query(
@@ -139,39 +165,6 @@ router.get('/',
     }
   }
 );
-
-// Proxy stream to hide S3 URL
-router.get('/f/:filename', async (req, res) => {
-  try {
-    const { filename } = req.params;
-    const [rows] = await db.query('SELECT * FROM media WHERE file_path = ? OR file_name = ? LIMIT 1', [filename, filename]);
-    
-    if (!rows.length) {
-      return res.status(404).send('File not found');
-    }
-    
-    const f = rows[0];
-    const url = f.url || await storageService.getFileUrl(f.file_path, f.storage_type).catch(() => null);
-    
-    if (!url) return res.status(404).send('File not found');
-
-    if (url.startsWith('http')) {
-      const response = await fetch(url);
-      if (!response.ok) return res.status(404).send('File not found on storage');
-      
-      res.setHeader('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
-      const { Readable } = require('stream');
-      Readable.fromWeb(response.body).pipe(res);
-    } else {
-      // Local file
-      const path = require('path');
-      res.sendFile(path.join(__dirname, '..', url));
-    }
-  } catch (error) {
-    console.error('Proxy error:', error);
-    res.status(500).send('Internal Server Error');
-  }
-});
 
 // POST /upload — single file (backward compat)
 router.post('/upload',

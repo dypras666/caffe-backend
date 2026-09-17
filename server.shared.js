@@ -495,7 +495,7 @@ app.delete('/api/branches/:id', authenticate, (req, res) => res.json({ success: 
 // ─── ROUTE FILES ──────────────────────────────────────────────
 const routeNames = [
   'shifts', 'payments', 'roles', 'rooms', 'vouchers',
-  'stock', 'recipes', 'units', 'variants', 'expenses', 'hr',
+  'stock', 'recipes', 'units', 'variants', 'expenses', 'hr', 'webhooks',
   'audit', 'backup', 'integrations', 'posts', 'printers', 'stations',
   'bookings', 'members', 'media', 'reports', 'settings', 'register',
   'ingredients', 'users', 'dashboard',

@@ -52,7 +52,7 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
     code, name, description, type, discount_type, discount_value,
     free_product_id, free_product_qty, bonus_points_multiplier,
     min_transaction, max_discount, branch_id, member_only,
-    usage_limit, usage_per_member, valid_from, valid_until,
+    usage_limit, usage_per_member, valid_from, valid_until, applicable_products
   } = req.body;
   if (!code || !name || !type) return res.status(400).json({ error: 'code, name, type wajib' });
   try {
@@ -61,8 +61,8 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
          (code, name, description, type, discount_type, discount_value,
           free_product_id, free_product_qty, bonus_points_multiplier,
           min_transaction, max_discount, branch_id, member_only,
-          usage_limit, usage_per_member, valid_from, valid_until, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          usage_limit, usage_per_member, valid_from, valid_until, created_by, applicable_products)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         code.toUpperCase(), name, description || null, type,
         discount_type || null, parseFloat(discount_value || 0),
@@ -74,6 +74,7 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
         parseInt(usage_per_member || 1),
         valid_from || null, valid_until || null,
         req.user.id,
+        applicable_products ? JSON.stringify(applicable_products) : null,
       ]
     );
     const [[v]] = await db.query('SELECT * FROM vouchers WHERE id = ?', [r.insertId]);
@@ -88,12 +89,16 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
 router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
   const allowed = ['name','description','discount_type','discount_value','free_product_id',
     'free_product_qty','bonus_points_multiplier','min_transaction','max_discount',
-    'branch_id','member_only','usage_limit','usage_per_member','valid_from','valid_until','is_active'];
+    'branch_id','member_only','usage_limit','usage_per_member','valid_from','valid_until','is_active', 'applicable_products'];
   const fields = [], vals = [];
   for (const f of allowed) {
     if (req.body[f] !== undefined) {
       fields.push(`${f}=?`);
-      vals.push(req.body[f] === '' ? null : req.body[f]);
+      if (f === 'applicable_products') {
+        vals.push(req.body[f] ? JSON.stringify(req.body[f]) : null);
+      } else {
+        vals.push(req.body[f] === '' ? null : req.body[f]);
+      }
     }
   }
   if (!fields.length) return res.status(400).json({ error: 'Tidak ada perubahan' });
@@ -174,7 +179,25 @@ async function validateVoucher(code, subtotal, branchId, userId) {
   let freeItem = null;
   let bonusPointsMultiplier = 1;
 
-  if (v.type === 'total_discount' || v.type === 'item_discount') {
+  if (v.type === 'item_discount') {
+    let applicableSubtotal = subtotal;
+    if (v.applicable_products) {
+      try {
+        const pIds = typeof v.applicable_products === 'string' ? JSON.parse(v.applicable_products) : v.applicable_products;
+        if (Array.isArray(pIds) && pIds.length > 0 && resolvedItems.length > 0) {
+          applicableSubtotal = resolvedItems
+            .filter(i => pIds.includes(i.product_id))
+            .reduce((sum, i) => sum + i.subtotal, 0);
+        }
+      } catch (e) {}
+    }
+    if (v.discount_type === 'percent') {
+      discountAmount = Math.floor(applicableSubtotal * parseFloat(v.discount_value) / 100);
+      if (v.max_discount) discountAmount = Math.min(discountAmount, parseFloat(v.max_discount));
+    } else {
+      discountAmount = Math.min(parseFloat(v.discount_value), applicableSubtotal);
+    }
+  } else if (v.type === 'total_discount') {
     if (v.discount_type === 'percent') {
       discountAmount = Math.floor(subtotal * parseFloat(v.discount_value) / 100);
       if (v.max_discount) discountAmount = Math.min(discountAmount, parseFloat(v.max_discount));
@@ -206,7 +229,7 @@ async function validateVoucher(code, subtotal, branchId, userId) {
 }
 
 // Atomic: validate + lock + increment in one transaction — prevents race conditions
-async function redeemVoucher(code, subtotal, branchId, userId, orderId, createdBy) {
+async function redeemVoucher(code, subtotal, branchId, userId, orderId, createdBy, resolvedItems = []) {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -260,7 +283,25 @@ async function redeemVoucher(code, subtotal, branchId, userId, orderId, createdB
     let freeItem = null;
     let bonusPointsMultiplier = 1;
 
-    if (v.type === 'total_discount' || v.type === 'item_discount') {
+    if (v.type === 'item_discount') {
+      let applicableSubtotal = subtotal;
+      if (v.applicable_products) {
+        try {
+          const pIds = typeof v.applicable_products === 'string' ? JSON.parse(v.applicable_products) : v.applicable_products;
+          if (Array.isArray(pIds) && pIds.length > 0 && resolvedItems.length > 0) {
+            applicableSubtotal = resolvedItems
+              .filter(i => pIds.includes(i.product_id))
+              .reduce((sum, i) => sum + i.subtotal, 0);
+          }
+        } catch (e) {}
+      }
+      if (v.discount_type === 'percent') {
+        discountAmount = Math.floor(applicableSubtotal * parseFloat(v.discount_value) / 100);
+        if (v.max_discount) discountAmount = Math.min(discountAmount, parseFloat(v.max_discount));
+      } else {
+        discountAmount = Math.min(parseFloat(v.discount_value), applicableSubtotal);
+      }
+    } else if (v.type === 'total_discount') {
       if (v.discount_type === 'percent') {
         discountAmount = Math.floor(subtotal * parseFloat(v.discount_value) / 100);
         if (v.max_discount) discountAmount = Math.min(discountAmount, parseFloat(v.max_discount));

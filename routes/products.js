@@ -92,6 +92,61 @@ router.get('/', optionalAuth, async (req, res) => {
           if (bs) { p.stock = bs.stock; p.min_stock = bs.min_stock; }
         });
       }
+
+      // Inject promo data from active vouchers
+      try {
+        const [vouchers] = await db.query(`
+          SELECT * FROM vouchers 
+          WHERE is_active = 1 
+            AND type = 'item_discount'
+            AND (valid_from IS NULL OR valid_from <= NOW())
+            AND (valid_until IS NULL OR valid_until >= NOW())
+        `);
+        if (vouchers.length > 0) {
+          const promoMap = new Map();
+          for (const v of vouchers) {
+            if (v.applicable_products) {
+              let parsed = v.applicable_products;
+              try {
+                while (typeof parsed === 'string') {
+                  parsed = JSON.parse(parsed);
+                }
+                pIds = Array.isArray(parsed) ? parsed : [];
+              } catch(e) {
+                pIds = [];
+              }
+              for (const pid of pIds) {
+                if (!promoMap.has(pid)) {
+                  promoMap.set(pid, {
+                    promo_end_time: v.valid_until || new Date(Date.now() + 86400000).toISOString(),
+                    promo_rules: `Diskon ${v.discount_type === 'percent' ? v.discount_value + '%' : 'Rp' + v.discount_value} (${v.code})`,
+                    promo_voucher: {
+                      code: v.code,
+                      discount_type: v.discount_type,
+                      discount_value: v.discount_value
+                    }
+                  });
+                }
+              }
+            }
+          }
+          products.forEach(p => {
+            const promo = promoMap.get(p.id);
+            if (promo) {
+              let meta = {};
+              if (p.meta_data) {
+                try { meta = typeof p.meta_data === 'string' ? JSON.parse(p.meta_data) : p.meta_data; } catch(e){}
+              }
+              meta.promo_end_time = promo.promo_end_time;
+              meta.promo_rules = promo.promo_rules;
+              meta.promo_voucher = promo.promo_voucher;
+              p.meta_data = JSON.stringify(meta);
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Error injecting promos:', err);
+      }
     }
 
     res.json({

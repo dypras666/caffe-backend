@@ -47,7 +47,7 @@ router.get('/', async (req, res) => {
     const params = [];
 
     if (!isAdmin) {
-      query += ' WHERE is_public = 1';
+      query += ' WHERE is_public = 1 OR setting_key = "qris_string"';
     }
 
     query += ' ORDER BY setting_group, setting_key';
@@ -152,7 +152,19 @@ router.put('/',
         );
 
         if (existing.length === 0) {
-          notFound.push(item.key);
+          const newValue = typeof item.value === 'object' ? JSON.stringify(item.value) : String(item.value);
+          await db.query(
+            'INSERT INTO system_settings (setting_key, setting_value, setting_type, setting_group, label) VALUES (?, ?, ?, ?, ?)',
+            [item.key, newValue, 'text', 'general', item.key]
+          );
+          updated.push(item.key);
+          await logActivity(
+            req.user.id,
+            'update_setting',
+            null,
+            null,
+            { key: item.key, value: newValue }
+          );
           continue;
         }
 
