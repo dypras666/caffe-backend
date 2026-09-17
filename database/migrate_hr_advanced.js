@@ -50,6 +50,11 @@ const db = require('../config/database');
       sort_order INT DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
+    // Add missing columns if upgrading from older migration
+    `ALTER TABLE kpi_metrics
+      ADD COLUMN target_type ENUM('numeric','percentage','boolean') DEFAULT 'numeric' AFTER unit,
+      ADD COLUMN higher_is_better TINYINT(1) DEFAULT 1 AFTER target_type,
+      ADD COLUMN sort_order INT DEFAULT 0 AFTER is_active`,
     // Employee KPI per month
     `CREATE TABLE IF NOT EXISTS employee_kpi (
       id INT AUTO_INCREMENT PRIMARY KEY,

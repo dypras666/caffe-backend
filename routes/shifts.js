@@ -151,6 +151,29 @@ router.post('/open', authenticate, authorize('admin', 'kasir'), async (req, res)
       severity: 'info',
     });
 
+    // Auto clock-in to HR module if enabled
+    try {
+      const [[hrSetting]] = await db.query("SELECT setting_value FROM system_settings WHERE setting_key = 'hr_enabled'");
+      if (hrSetting && hrSetting.setting_value === 'true') {
+        const [[emp]] = await db.query("SELECT id FROM employees WHERE user_id = ?", [req.user.id]);
+        if (emp) {
+          const [[existingAtt]] = await db.query(
+            "SELECT id FROM attendance WHERE employee_id = ? AND work_date = CURDATE()",
+            [emp.id]
+          );
+          if (!existingAtt) {
+            await db.query(
+              `INSERT INTO attendance (employee_id, work_date, clock_in, status, notes)
+               VALUES (?, CURDATE(), CURTIME(), 'present', 'Auto clock-in dari Open Shift')`,
+              [emp.id]
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Auto clock-in error:", err);
+    }
+
     const [[shift]] = await db.query('SELECT * FROM shifts WHERE id = ?', [r.insertId]);
     res.status(201).json({ shift });
   } catch (e) { res.status(500).json({ error: e.message }); }
