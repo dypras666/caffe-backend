@@ -1287,6 +1287,13 @@ const MIGRATIONS = [
     sql: `
       ALTER TABLE users ADD COLUMN IF NOT EXISTS station_id INT DEFAULT NULL;
     `
+  },
+  {
+    id: '065_users_role_enum_station',
+    sql: `
+      ALTER TABLE users
+        MODIFY COLUMN role ENUM('admin','kasir','waiter','member','station','kitchen') DEFAULT 'kasir';
+    `
   }
 ];
 

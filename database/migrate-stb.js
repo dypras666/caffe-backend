@@ -572,12 +572,19 @@ const MIGRATIONS = [
     statements: [
       `INSERT IGNORE INTO roles (name, label, is_system, permissions) VALUES
        ('station', 'Station / Dapur', 1, '{"orders":["read","update_status"],"products":["read"],"tables":["read"]}')`
+    ],
   },
   {
     id: '062_users_add_station_id',
     statements: [
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS station_id INT DEFAULT NULL;`
     ],
+  },
+  {
+    id: '063_users_role_enum_station',
+    statements: [
+      `ALTER TABLE users MODIFY COLUMN role ENUM('admin','kasir','waiter','member','station','kitchen') DEFAULT 'kasir';`
+    ]
   }
 ];
 
