@@ -70,7 +70,7 @@ router.post('/register',
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-    body('role').isIn(['admin', 'kasir', 'waiter']).withMessage('Invalid role'),
+    body('role').isIn(['admin', 'kasir', 'waiter', 'station', 'kitchen']).withMessage('Invalid role'),
   ],
   async (req, res) => {
     try {
@@ -103,7 +103,7 @@ router.post('/register',
       );
 
       // Auto-create employee record for non-admin staff if HR module is enabled
-      if (['kasir', 'waiter'].includes(role)) {
+      if (['kasir', 'waiter', 'station', 'kitchen'].includes(role)) {
         try {
           const [[hrSetting]] = await db.query(
             "SELECT setting_value FROM system_settings WHERE setting_key = 'hr_enabled'"
