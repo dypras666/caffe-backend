@@ -1281,6 +1281,12 @@ const MIGRATIONS = [
       INSERT IGNORE INTO roles (name, label, is_system, permissions) VALUES
       ('station', 'Station / Dapur', 1, '{"orders":["read","update_status"],"products":["read"],"tables":["read"]}');
     `,
+  },
+  {
+    id: '064_users_add_station_id',
+    sql: `
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS station_id INT DEFAULT NULL;
+    `
   }
 ];
 

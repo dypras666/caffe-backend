@@ -43,7 +43,7 @@ router.get('/',
       const offset = (page - 1) * limit;
       const { role, status, search, branch_id } = req.query;
 
-      let baseQuery = 'FROM users u LEFT JOIN branches b ON b.id = u.branch_id WHERE 1=1';
+      let baseQuery = 'FROM users u LEFT JOIN branches b ON b.id = u.branch_id LEFT JOIN stations s ON s.id = u.station_id WHERE 1=1';
       const params = [];
 
       if (role) {
@@ -73,6 +73,7 @@ router.get('/',
       const [users] = await db.query(
         `SELECT u.id, u.name, u.email, u.role, u.status, u.avatar, u.phone,
                 u.balance, u.is_priority, u.branch_id, b.name AS branch_name,
+                u.station_id, s.name AS station_name,
                 u.created_at, u.updated_at
          ${baseQuery} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
         [...params, limit, offset]
@@ -266,7 +267,7 @@ router.put('/:id',
       }
 
       const old = existing[0];
-      const allowedFields = ['name', 'phone', 'role', 'status', 'avatar', 'is_priority', 'branch_id'];
+      const allowedFields = ['name', 'phone', 'role', 'status', 'avatar', 'is_priority', 'branch_id', 'station_id'];
       const updates = [];
       const values = [];
 

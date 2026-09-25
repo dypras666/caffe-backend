@@ -70,7 +70,7 @@ router.post('/employees', authenticate, authorize('admin'), hrEnabled, async (re
       user_id, employee_code, full_name, nik, phone, address,
       department, position, employment_type, join_date,
       base_salary, hourly_rate, bank_name, bank_account, bank_account_name, branch_id,
-      create_user_account, email, password, user_role,
+      create_user_account, email, password, user_role, station_id
     } = req.body;
     if (!full_name) return res.status(400).json({ error: 'Nama lengkap wajib diisi' });
 
@@ -83,8 +83,8 @@ router.post('/employees', authenticate, authorize('admin'), hrEnabled, async (re
       if (existing) return res.status(409).json({ error: 'Email sudah terdaftar' });
       const hashed = await bcrypt.hash(password, 10);
       const [ur] = await db.query(
-        'INSERT INTO users (name, email, password, role, phone, branch_id) VALUES (?, ?, ?, ?, ?, ?)',
-        [full_name, email, hashed, user_role || 'kasir', phone || null, branch_id || req.user.branch_id || null]
+        'INSERT INTO users (name, email, password, role, phone, branch_id, station_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [full_name, email, hashed, user_role || 'kasir', phone || null, branch_id || req.user.branch_id || null, station_id || null]
       );
       linkedUserId = ur.insertId;
     }

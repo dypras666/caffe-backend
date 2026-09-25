@@ -83,7 +83,7 @@ router.post('/register',
         return res.status(403).json({ error: 'Only admins can create users' });
       }
 
-      const { name, email, password, role, phone, branch_id } = req.body;
+      const { name, email, password, role, phone, branch_id, station_id } = req.body;
 
       const [existing] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
       if (existing.length > 0) {
@@ -92,8 +92,8 @@ router.post('/register',
 
       const hashedPassword = await bcrypt.hash(password, 10);
       const [result] = await db.query(
-        'INSERT INTO users (name, email, password, role, phone, branch_id) VALUES (?, ?, ?, ?, ?, ?)',
-        [name, email, hashedPassword, role, phone || null, branch_id || null]
+        'INSERT INTO users (name, email, password, role, phone, branch_id, station_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [name, email, hashedPassword, role, phone || null, branch_id || null, station_id || null]
       );
       const newUserId = result.insertId;
 
