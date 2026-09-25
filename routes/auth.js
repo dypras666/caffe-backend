@@ -208,7 +208,14 @@ router.post('/login',
 
 // Get current user
 router.get('/me', authenticate, async (req, res) => {
-  res.json({ user: req.user });
+  let user = { ...req.user };
+  if (user.station_id) {
+    const [[station]] = await db.query('SELECT code, name FROM stations WHERE id = ?', [user.station_id]);
+    if (station) {
+      user.station = station;
+    }
+  }
+  res.json({ user });
 });
 
 // Change password

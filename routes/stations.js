@@ -36,6 +36,7 @@ router.get('/display/:stationCode', async (req, res) => {
          oi.product_name,
          oi.quantity,
          oi.notes,
+         oi.station_notes,
          oi.station_status,
          oi.addons_selected,
          oi.created_at AS item_created_at
@@ -66,6 +67,7 @@ router.get('/display/:stationCode', async (req, res) => {
         product_name: row.product_name,
         quantity: row.quantity,
         notes: row.notes,
+        station_notes: row.station_notes,
         station_status: row.station_status,
         addons_selected: row.addons_selected ? JSON.parse(row.addons_selected) : [],
       });
@@ -139,6 +141,65 @@ router.patch('/items/:orderItemId/status',
       res.json({ message: 'Item status updated', order_item_id: orderItemId, station_status: status });
     } catch (error) {
       console.error('Update item station status error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// ─── UPDATE STATION NOTES FOR ONE ORDER ITEM ────────────────────────────────
+router.patch('/items/:orderItemId/notes',
+  authenticate,
+  [
+    param('orderItemId').isInt({ min: 1 }),
+    body('station_notes').isString().optional({ nullable: true })
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+      await db.query('UPDATE order_items SET station_notes = ? WHERE id = ?', [req.body.station_notes, req.params.orderItemId]);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// ─── UPDATE PRODUCT STOCK ────────────────────────────────────────────────────
+router.patch('/products/:productId/stock',
+  authenticate,
+  [
+    param('productId').isInt({ min: 1 }),
+    body('stock').optional({ nullable: true }).isInt()
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      await db.query('UPDATE products SET stock = ? WHERE id = ?', [req.body.stock, req.params.productId]);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// ─── MY PRODUCTS (FOR STATION) ─────────────────────────────────────────────
+router.get('/my-products',
+  authenticate,
+  async (req, res) => {
+    try {
+      if (!req.user.station_id) return res.json({ products: [] });
+      const [products] = await db.query(
+        `SELECT p.id, p.name, p.stock FROM products p 
+         JOIN product_stations ps ON ps.product_id = p.id 
+         WHERE ps.station_id = ? AND p.is_available = 1
+         ORDER BY p.name ASC`,
+        [req.user.station_id]
+      );
+      res.json({ products });
+    } catch (err) {
       res.status(500).json({ error: 'Server error' });
     }
   }

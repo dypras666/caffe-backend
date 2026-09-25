@@ -14,7 +14,7 @@ const authenticate = async (req, res, next) => {
 
     // Get user from database — support both token shapes: { userId } and { id }
     const [users] = await db.query(
-      'SELECT id, name, email, role, status, balance, is_priority, branch_id FROM users WHERE id = ? AND status = "active"',
+      'SELECT id, name, email, role, status, balance, is_priority, branch_id, station_id FROM users WHERE id = ? AND status = "active"',
       [decoded.userId || decoded.id]
     );
 
@@ -119,7 +119,7 @@ const optionalAuth = async (req, res, next) => {
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const [users] = await db.query(
-        'SELECT id, name, email, role, status, balance, is_priority, branch_id FROM users WHERE id = ? AND status = "active"',
+        'SELECT id, name, email, role, status, balance, is_priority, branch_id, station_id FROM users WHERE id = ? AND status = "active"',
         [decoded.userId || decoded.id]
       );
 
