@@ -567,6 +567,13 @@ const MIGRATIONS = [
         (8, 'Contact', '/#contact', 'Phone', 8, 1)`,
     ],
   },
+  {
+    id: '061_add_station_kitchen_roles',
+    statements: [
+      `INSERT IGNORE INTO roles (name, label, is_system, permissions) VALUES
+       ('station', 'Station / Dapur', 1, '{"orders":["read","update_status"],"products":["read"],"tables":["read"]}')`
+    ],
+  }
 ];
 
 async function run(exitAfter = true) {

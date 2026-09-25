@@ -1274,6 +1274,13 @@ const MIGRATIONS = [
         FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
       ) ENGINE=InnoDB;
     `,
+  },
+  {
+    id: '063_add_station_kitchen_roles',
+    sql: `
+      INSERT IGNORE INTO roles (name, label, is_system, permissions) VALUES
+      ('station', 'Station / Dapur', 1, '{"orders":["read","update_status"],"products":["read"],"tables":["read"]}');
+    `,
   }
 ];
 
