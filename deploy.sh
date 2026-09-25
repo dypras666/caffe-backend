@@ -60,17 +60,17 @@ echo "Ports: backend=\${BACKEND_PORT}, admin=\${ADMIN_PORT}, ui=\${UI_PORT}"
 
 # Build images
 echo "Building backend..."
-docker build -t \${TENANT}-backend:latest \${TENANT_DIR}/backend/
+docker build -t \${TENANT}-backend:latest \${TENANT_DIR}/cafe-backend/
 
 echo "Building admin..."
-docker build -t \${TENANT}-admin:latest \${TENANT_DIR}/admin/
+docker build -t \${TENANT}-admin:latest \${TENANT_DIR}/cafe-admin/
 
 echo "Building ui..."
-docker build -t \${TENANT}-ui:latest \${TENANT_DIR}/ui/
+docker build -t \${TENANT}-ui:latest \${TENANT_DIR}/cafe-ui/
 
 # Run containers
 echo "Starting containers..."
-docker run -d --name \${TENANT}-backend --restart unless-stopped -p \${BACKEND_PORT}:3000 \${TENANT}-backend:latest
+docker run -d --name \${TENANT}-backend --restart unless-stopped --env-file \${TENANT_DIR}/cafe-backend/.env -p \${BACKEND_PORT}:3000 \${TENANT}-backend:latest
 docker run -d --name \${TENANT}-admin --restart unless-stopped -p \${ADMIN_PORT}:80 \${TENANT}-admin:latest
 docker run -d --name \${TENANT}-ui --restart unless-stopped -p \${UI_PORT}:80 \${TENANT}-ui:latest
 
