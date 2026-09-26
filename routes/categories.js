@@ -127,7 +127,7 @@ router.get('/:id',
 // POST / — admin, auto-generate slug
 router.post('/',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'station'),
   sanitizeInput,
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
@@ -190,7 +190,7 @@ router.post('/',
 // PUT /:id — admin
 router.put('/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'station'),
   sanitizeInput,
   [
     param('id').isInt({ min: 1 }).withMessage('Invalid category ID'),
@@ -284,7 +284,7 @@ router.put('/:id',
 // DELETE /:id — admin, check if products exist
 router.delete('/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'station'),
   param('id').isInt({ min: 1 }).withMessage('Invalid category ID'),
   async (req, res) => {
     try {

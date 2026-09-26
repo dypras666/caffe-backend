@@ -5,7 +5,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
 
 // GET /api/ingredients
-router.get('/', authenticate, authorize('admin'), async (req, res) => {
+router.get('/', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const { search, q, low_stock, limit } = req.query;
     const branch_id = req.query.branch_id || req.user.branch_id || null;
@@ -48,7 +48,7 @@ router.get('/', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // GET /api/ingredients/:id
-router.get('/:id', authenticate, authorize('admin'), async (req, res) => {
+router.get('/:id', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const [[ing]] = await db.query('SELECT * FROM ingredients WHERE id=?', [req.params.id]);
     if (!ing) return res.status(404).json({ error: 'Bahan tidak ditemukan' });
@@ -61,7 +61,7 @@ router.get('/:id', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // POST /api/ingredients
-router.post('/', authenticate, authorize('admin'), async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { name, code, unit, unit_cost, stock_qty, min_stock, supplier_id, notes } = req.body;
   if (!name || !unit) return res.status(400).json({ error: 'name dan unit wajib' });
   try {
@@ -86,7 +86,7 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // PUT /api/ingredients/:id
-router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
+router.put('/:id', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { name, code, unit, unit_id, unit_cost, min_stock, supplier_id, notes, is_active } = req.body;
   const fields = [], vals = [];
   if (name !== undefined) { fields.push('name=?'); vals.push(name); }
@@ -113,7 +113,7 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // GET /api/ingredients/compatible-units/:id — units compatible with this ingredient's base unit
-router.get('/compatible-units/:id', authenticate, authorize('admin'), async (req, res) => {
+router.get('/compatible-units/:id', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const [[ing]] = await db.query(
       'SELECT i.unit_id, i.unit AS unit_symbol, u.base_unit_id, u.type FROM ingredients i LEFT JOIN units u ON u.id = i.unit_id WHERE i.id=?',
@@ -167,7 +167,7 @@ router.get('/compatible-units/:id', authenticate, authorize('admin'), async (req
 });
 
 // POST /api/ingredients/:id/adjust — with optional unit conversion (master units OR custom units)
-router.post('/:id/adjust', authenticate, authorize('admin'), async (req, res) => {
+router.post('/:id/adjust', authenticate, authorize('admin', 'station'), async (req, res) => {
   // custom_unit_symbol: use ingredient_unit_conversions table
   const { qty_change, input_qty, input_unit_id, custom_unit_symbol, movement_type = 'adjustment', note } = req.body;
   if (qty_change === undefined && input_qty === undefined) return res.status(400).json({ error: 'qty_change atau input_qty wajib' });
@@ -276,7 +276,7 @@ router.post('/:id/adjust', authenticate, authorize('admin'), async (req, res) =>
 // ─── CUSTOM UNIT CONVERSIONS per ingredient ───────────────────
 
 // GET /api/ingredients/:id/units
-router.get('/:id/units', authenticate, authorize('admin'), async (req, res) => {
+router.get('/:id/units', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const [rows] = await db.query(
       'SELECT * FROM ingredient_unit_conversions WHERE ingredient_id=? ORDER BY sort_order, conversion_qty',
@@ -288,7 +288,7 @@ router.get('/:id/units', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // POST /api/ingredients/:id/units
-router.post('/:id/units', authenticate, authorize('admin'), async (req, res) => {
+router.post('/:id/units', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { unit_name, unit_symbol, conversion_qty, notes, sort_order } = req.body;
   if (!unit_name || !unit_symbol || !conversion_qty)
     return res.status(400).json({ error: 'unit_name, unit_symbol, conversion_qty wajib' });
@@ -311,7 +311,7 @@ router.post('/:id/units', authenticate, authorize('admin'), async (req, res) => 
 });
 
 // PUT /api/ingredients/units/:convId
-router.put('/units/:convId', authenticate, authorize('admin'), async (req, res) => {
+router.put('/units/:convId', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { unit_name, unit_symbol, conversion_qty, notes, sort_order, is_active } = req.body;
   const fields = [], vals = [];
   if (unit_name !== undefined) { fields.push('unit_name=?'); vals.push(unit_name); }
@@ -335,7 +335,7 @@ router.put('/units/:convId', authenticate, authorize('admin'), async (req, res) 
 });
 
 // DELETE /api/ingredients/units/:convId
-router.delete('/units/:convId', authenticate, authorize('admin'), async (req, res) => {
+router.delete('/units/:convId', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     await db.query('DELETE FROM ingredient_unit_conversions WHERE id=?', [req.params.convId]);
     res.json({ message: 'Satuan dihapus' });

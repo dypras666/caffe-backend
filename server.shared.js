@@ -79,7 +79,12 @@ app.post('/api/auth/login', async (req, res) => {
       { id: user.id, email: user.email, role: user.role, name: user.name },
       process.env.JWT_SECRET, { expiresIn: '7d' }
     );
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    let station = null;
+    if (user.station_id) {
+      const [[st]] = await db.query('SELECT code, name FROM stations WHERE id = ?', [user.station_id]);
+      if (st) station = st;
+    }
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, station_id: user.station_id, station } });
   } catch (e) {
     console.error('Login error:', e);
     res.status(500).json({ error: 'Server error' });

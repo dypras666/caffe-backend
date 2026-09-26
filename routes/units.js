@@ -88,7 +88,7 @@ router.get('/:id/convert',
 // POST /
 router.post('/',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'station'),
   sanitizeInput,
   [
     body('name').notEmpty().trim().withMessage('Name is required'),
@@ -132,7 +132,7 @@ router.post('/',
 // PUT /:id
 router.put('/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'station'),
   sanitizeInput,
   [
     param('id').isInt({ min: 1 }).withMessage('Invalid unit ID'),
@@ -191,7 +191,7 @@ router.put('/:id',
 // DELETE /:id  (sets is_active = 0)
 router.delete('/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'station'),
   param('id').isInt({ min: 1 }).withMessage('Invalid unit ID'),
   async (req, res) => {
     try {

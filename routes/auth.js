@@ -154,7 +154,7 @@ router.post('/login',
 
       // Support login dengan email ATAU nomor HP
       const [users] = await db.query(
-        `SELECT id, name, email, password, role, status, avatar, balance, is_priority, phone
+        `SELECT id, name, email, password, role, status, avatar, balance, is_priority, phone, station_id, branch_id
          FROM users WHERE email = ? OR phone = ?`,
         [identifier, identifier]
       );
@@ -185,6 +185,14 @@ router.post('/login',
         [user.id, 'login', req.ip, req.headers['user-agent']]
       );
 
+      // Fetch station if assigned
+      if (user.station_id) {
+        const [[station]] = await db.query('SELECT code, name FROM stations WHERE id = ?', [user.station_id]);
+        if (station) {
+          user.station = station;
+        }
+      }
+
       res.json({
         message: 'Login successful',
         token,
@@ -197,6 +205,9 @@ router.post('/login',
           balance: parseFloat(user.balance || 0),
           is_priority: !!user.is_priority,
           phone: user.phone,
+          station_id: user.station_id,
+          branch_id: user.branch_id,
+          station: user.station
         }
       });
     } catch (error) {

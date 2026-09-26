@@ -108,7 +108,7 @@ router.get('/:productId', authenticate, async (req, res) => {
 });
 
 // POST /api/recipes — create or update recipe for product
-router.post('/:productId', authenticate, authorize('admin'), async (req, res) => {
+router.post('/:productId', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { notes, yield_qty, yield_unit, prep_time_min, items } = req.body;
   if (!items?.length) return res.status(400).json({ error: 'Minimal 1 item bahan' });
 
@@ -167,7 +167,7 @@ router.post('/:productId', authenticate, authorize('admin'), async (req, res) =>
 });
 
 // DELETE /api/recipes/:productId
-router.delete('/:productId', authenticate, authorize('admin'), async (req, res) => {
+router.delete('/:productId', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     await db.query('DELETE FROM recipes WHERE product_id=?', [req.params.productId]);
     res.json({ message: 'Resep dihapus' });
@@ -175,7 +175,7 @@ router.delete('/:productId', authenticate, authorize('admin'), async (req, res) 
 });
 
 // POST /api/recipes/recalculate-all — recalculate all HPP from current ingredient costs
-router.post('/recalculate-all', authenticate, authorize('admin'), async (req, res) => {
+router.post('/recalculate-all', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const [recipes] = await db.query('SELECT id, product_id FROM recipes');
     let updated = 0;
@@ -190,7 +190,7 @@ router.post('/recalculate-all', authenticate, authorize('admin'), async (req, re
 });
 
 // GET /api/recipes/hpp-report — margin analysis all products with recipes
-router.get('/hpp-report', authenticate, authorize('admin'), async (req, res) => {
+router.get('/hpp-report', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT p.id, p.name, p.price AS selling_price, p.cost_price AS hpp,

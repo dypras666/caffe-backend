@@ -65,7 +65,7 @@ const recordStockCard = async (conn, { product_id, branch_id, movement_type, ref
 
 // ─── SUPPLIERS ───────────────────────────────────────────────
 
-router.get('/suppliers', authenticate, authorize('admin'), async (req, res) => {
+router.get('/suppliers', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const { q, limit = 30 } = req.query;
     let sql = 'SELECT id, name, code, contact_person, phone, email, is_active FROM suppliers WHERE is_active=1';
@@ -78,7 +78,7 @@ router.get('/suppliers', authenticate, authorize('admin'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/suppliers', authenticate, authorize('admin'), async (req, res) => {
+router.post('/suppliers', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { name, code, contact_person, phone, email, address, notes } = req.body;
   if (!name) return res.status(400).json({ error: 'Nama supplier wajib diisi' });
   try {
@@ -95,7 +95,7 @@ router.post('/suppliers', authenticate, authorize('admin'), async (req, res) => 
   }
 });
 
-router.put('/suppliers/:id', authenticate, authorize('admin'), async (req, res) => {
+router.put('/suppliers/:id', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { name, code, contact_person, phone, email, address, notes, is_active } = req.body;
   try {
     const fields = [], vals = [];
@@ -115,7 +115,7 @@ router.put('/suppliers/:id', authenticate, authorize('admin'), async (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.delete('/suppliers/:id', authenticate, authorize('admin'), async (req, res) => {
+router.delete('/suppliers/:id', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     await db.query('DELETE FROM suppliers WHERE id=?', [req.params.id]);
     res.json({ message: 'Supplier dihapus' });
@@ -125,7 +125,7 @@ router.delete('/suppliers/:id', authenticate, authorize('admin'), async (req, re
 // ─── STOCK CARD (Kartu Stok) ─────────────────────────────────
 
 // GET /stock/card/:productId — full kartu stok for one product
-router.get('/card/:productId', authenticate, authorize('admin'), async (req, res) => {
+router.get('/card/:productId', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const branch_id = req.query.branch_id || req.user.branch_id || null;
 
@@ -175,7 +175,7 @@ router.get('/card/:productId', authenticate, authorize('admin'), async (req, res
 });
 
 // GET /stock/cards — all stock cards, filterable
-router.get('/cards', authenticate, authorize('admin'), async (req, res) => {
+router.get('/cards', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const { product_id, movement_type, date_from, date_to, page = 1, limit = 30 } = req.query;
     const branch_id = req.query.branch_id || req.user.branch_id || null;
@@ -203,7 +203,7 @@ router.get('/cards', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // POST /stock/adjustment — manual stock adjustment or waste
-router.post('/adjustment', authenticate, authorize('admin'), async (req, res) => {
+router.post('/adjustment', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { product_id, qty_change, movement_type = 'adjustment', note, unit_cost } = req.body;
   if (!product_id || qty_change === undefined) return res.status(400).json({ error: 'product_id dan qty_change wajib' });
   const validTypes = ['adjustment', 'waste', 'return', 'opname'];
@@ -226,7 +226,7 @@ router.post('/adjustment', authenticate, authorize('admin'), async (req, res) =>
 
 // ─── PURCHASE ORDERS ─────────────────────────────────────────
 
-router.get('/po', authenticate, authorize('admin'), async (req, res) => {
+router.get('/po', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
     let where = 'WHERE 1=1', params = [];
@@ -247,7 +247,7 @@ router.get('/po', authenticate, authorize('admin'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/po/:id', authenticate, authorize('admin'), async (req, res) => {
+router.get('/po/:id', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const [[po]] = await db.query(
       `SELECT po.*, s.name AS supplier_name FROM purchase_orders po
@@ -263,7 +263,7 @@ router.get('/po/:id', authenticate, authorize('admin'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/po', authenticate, authorize('admin'), async (req, res) => {
+router.post('/po', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { supplier_id, order_date, expected_date, notes, items } = req.body;
   if (!order_date || !items?.length) return res.status(400).json({ error: 'order_date dan items wajib' });
 
@@ -310,7 +310,7 @@ router.post('/po', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // PUT /po/:id/status — change status, e.g. draft→ordered
-router.put('/po/:id/status', authenticate, authorize('admin'), async (req, res) => {
+router.put('/po/:id/status', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { status } = req.body;
   const valid = ['draft','ordered','cancelled'];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Status tidak valid' });
@@ -324,7 +324,7 @@ router.put('/po/:id/status', authenticate, authorize('admin'), async (req, res) 
 });
 
 // POST /po/:id/receive — terima barang (partial/full), update stock
-router.post('/po/:id/receive', authenticate, authorize('admin'), async (req, res) => {
+router.post('/po/:id/receive', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { items, received_date, notes } = req.body;
   // items = [{ po_item_id, qty_received, unit_cost }]
   if (!items?.length) return res.status(400).json({ error: 'items wajib' });
@@ -403,7 +403,7 @@ router.post('/po/:id/receive', authenticate, authorize('admin'), async (req, res
 
 // ─── STOCK OPNAME ────────────────────────────────────────────
 
-router.get('/opname', authenticate, authorize('admin'), async (req, res) => {
+router.get('/opname', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const [rows] = await db.query(
       `SELECT so.*, u.name AS created_by_name FROM stock_opnames so
@@ -413,7 +413,7 @@ router.get('/opname', authenticate, authorize('admin'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/opname/:id', authenticate, authorize('admin'), async (req, res) => {
+router.get('/opname/:id', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const [[opname]] = await db.query('SELECT * FROM stock_opnames WHERE id=?', [req.params.id]);
     if (!opname) return res.status(404).json({ error: 'Opname tidak ditemukan' });
@@ -427,7 +427,7 @@ router.get('/opname/:id', authenticate, authorize('admin'), async (req, res) => 
 });
 
 // POST /opname — create opname (auto-fill system qty from products, scoped to branch)
-router.post('/opname', authenticate, authorize('admin'), async (req, res) => {
+router.post('/opname', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { opname_date, notes, product_ids } = req.body;
   if (!opname_date) return res.status(400).json({ error: 'opname_date wajib' });
 
@@ -479,7 +479,7 @@ router.post('/opname', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // PUT /opname/:id/items — update actual counts
-router.put('/opname/:id/items', authenticate, authorize('admin'), async (req, res) => {
+router.put('/opname/:id/items', authenticate, authorize('admin', 'station'), async (req, res) => {
   const { items } = req.body; // [{ item_id, qty_actual, notes }]
   if (!items?.length) return res.status(400).json({ error: 'items wajib' });
   try {
@@ -498,7 +498,7 @@ router.put('/opname/:id/items', authenticate, authorize('admin'), async (req, re
 });
 
 // POST /opname/:id/approve — finalize opname, post adjustments to stock card
-router.post('/opname/:id/approve', authenticate, authorize('admin'), async (req, res) => {
+router.post('/opname/:id/approve', authenticate, authorize('admin', 'station'), async (req, res) => {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -543,7 +543,7 @@ router.post('/opname/:id/approve', authenticate, authorize('admin'), async (req,
 // ─── STOCK SUMMARY ───────────────────────────────────────────
 
 // GET /stock/summary — overview: low stock, stock value, etc
-router.get('/summary', authenticate, authorize('admin'), async (req, res) => {
+router.get('/summary', authenticate, authorize('admin', 'station'), async (req, res) => {
   try {
     const branch_id = req.query.branch_id || req.user.branch_id || null;
 
