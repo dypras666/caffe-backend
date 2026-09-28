@@ -1358,6 +1358,13 @@ const MIGRATIONS = [
       FROM orders
       WHERE paid_amount > 0 AND id NOT IN (SELECT order_id FROM order_payments);
     `
+  },
+  {
+    id: '069_shifts_add_branch_id',
+    sql: `
+      ALTER TABLE shifts
+        ADD COLUMN IF NOT EXISTS branch_id INT DEFAULT NULL;
+    `
   }
 ];
 
