@@ -69,61 +69,66 @@ async function seedDemo() {
 
     // 5. CATEGORIES & PRODUCTS (with Variants & Addons)
     console.log('  5. Membuat Produk & Varian...');
-    
-    // Check tables existence safely
-    await db.query(`CREATE TABLE IF NOT EXISTS product_variant_groups (id INT AUTO_INCREMENT PRIMARY KEY, product_id INT, name VARCHAR(100), type VARCHAR(50) DEFAULT 'single', is_required TINYINT DEFAULT 0, sort_order INT DEFAULT 0, is_active TINYINT DEFAULT 1)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS product_variant_options (id INT AUTO_INCREMENT PRIMARY KEY, group_id INT, name VARCHAR(100), price_modifier DECIMAL(10,2) DEFAULT 0, is_default TINYINT DEFAULT 0, sort_order INT DEFAULT 0, is_active TINYINT DEFAULT 1)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS product_addon_groups (id INT AUTO_INCREMENT PRIMARY KEY, product_id INT, name VARCHAR(100), max_selection INT DEFAULT 1, sort_order INT DEFAULT 0, is_active TINYINT DEFAULT 1)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS product_addons (id INT AUTO_INCREMENT PRIMARY KEY, group_id INT, name VARCHAR(100), price DECIMAL(10,2) DEFAULT 0, max_qty INT DEFAULT 1, sort_order INT DEFAULT 0, is_active TINYINT DEFAULT 1)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS product_stations (product_id INT NOT NULL, station_id INT NOT NULL, PRIMARY KEY (product_id, station_id))`);
-    
-    const [catRes1] = await db.query('INSERT IGNORE INTO categories (name, slug, display_order) VALUES (?, ?, ?)', ['Kopi', 'kopi', 1]);
-    const catId1 = catRes1.insertId || (await db.query('SELECT id FROM categories WHERE slug="kopi"'))[0][0].id;
+    try {
+      // Check tables existence safely
+      await db.query(`CREATE TABLE IF NOT EXISTS product_variant_groups (id INT AUTO_INCREMENT PRIMARY KEY, product_id INT, name VARCHAR(100), type VARCHAR(50) DEFAULT 'single', is_required TINYINT DEFAULT 0, sort_order INT DEFAULT 0, is_active TINYINT DEFAULT 1)`);
+      try { await db.query('ALTER TABLE product_variant_groups ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT "single"'); } catch (_) {}
+      await db.query(`CREATE TABLE IF NOT EXISTS product_variant_options (id INT AUTO_INCREMENT PRIMARY KEY, group_id INT, name VARCHAR(100), price_modifier DECIMAL(10,2) DEFAULT 0, is_default TINYINT DEFAULT 0, sort_order INT DEFAULT 0, is_active TINYINT DEFAULT 1)`);
+      await db.query(`CREATE TABLE IF NOT EXISTS product_addon_groups (id INT AUTO_INCREMENT PRIMARY KEY, product_id INT, name VARCHAR(100), max_selection INT DEFAULT 1, sort_order INT DEFAULT 0, is_active TINYINT DEFAULT 1)`);
+      try { await db.query('ALTER TABLE product_addon_groups ADD COLUMN IF NOT EXISTS max_selection INT DEFAULT 1'); } catch (_) {}
+      await db.query(`CREATE TABLE IF NOT EXISTS product_addons (id INT AUTO_INCREMENT PRIMARY KEY, group_id INT, name VARCHAR(100), price DECIMAL(10,2) DEFAULT 0, max_qty INT DEFAULT 1, sort_order INT DEFAULT 0, is_active TINYINT DEFAULT 1)`);
+      await db.query(`CREATE TABLE IF NOT EXISTS product_stations (product_id INT NOT NULL, station_id INT NOT NULL, PRIMARY KEY (product_id, station_id))`);
+      
+      const [catRes1] = await db.query('INSERT IGNORE INTO categories (name, slug, display_order) VALUES (?, ?, ?)', ['Kopi', 'kopi', 1]);
+      const catId1 = catRes1.insertId || (await db.query('SELECT id FROM categories WHERE slug="kopi"'))[0][0].id;
 
-    const [catRes2] = await db.query('INSERT IGNORE INTO categories (name, slug, display_order) VALUES (?, ?, ?)', ['Makanan', 'makanan', 2]);
-    const catId2 = catRes2.insertId || (await db.query('SELECT id FROM categories WHERE slug="makanan"'))[0][0].id;
+      const [catRes2] = await db.query('INSERT IGNORE INTO categories (name, slug, display_order) VALUES (?, ?, ?)', ['Makanan', 'makanan', 2]);
+      const catId2 = catRes2.insertId || (await db.query('SELECT id FROM categories WHERE slug="makanan"'))[0][0].id;
 
-    const [barIdRes] = await db.query('SELECT id FROM stations WHERE code="BAR"');
-    const barId = barIdRes.length ? barIdRes[0].id : 1;
+      const [barIdRes] = await db.query('SELECT id FROM stations WHERE code="BAR"');
+      const barId = barIdRes.length ? barIdRes[0].id : 1;
 
-    const [ktnIdRes] = await db.query('SELECT id FROM stations WHERE code="KTN"');
-    const ktnId = ktnIdRes.length ? ktnIdRes[0].id : 1;
+      const [ktnIdRes] = await db.query('SELECT id FROM stations WHERE code="KTN"');
+      const ktnId = ktnIdRes.length ? ktnIdRes[0].id : 1;
 
-    // PRODUK 1: Americano (BAR)
-    const [p1Res] = await db.query('INSERT IGNORE INTO products (category_id, name, slug, price, stock, is_available) VALUES (?, ?, ?, ?, ?, 1)', [catId1, 'Americano', 'americano', 20000, 100]);
-    const p1Id = p1Res.insertId || (await db.query('SELECT id FROM products WHERE slug="americano"'))[0][0].id;
-    await db.query('INSERT IGNORE INTO product_stations (product_id, station_id) VALUES (?, ?)', [p1Id, barId]);
+      // PRODUK 1: Americano (BAR)
+      const [p1Res] = await db.query('INSERT IGNORE INTO products (category_id, name, slug, price, stock, is_available) VALUES (?, ?, ?, ?, ?, 1)', [catId1, 'Americano', 'americano', 20000, 100]);
+      const p1Id = p1Res.insertId || (await db.query('SELECT id FROM products WHERE slug="americano"'))[0][0].id;
+      await db.query('INSERT IGNORE INTO product_stations (product_id, station_id) VALUES (?, ?)', [p1Id, barId]);
 
-    // Variant: Suhu (Hot/Ice)
-    const [vg1Res] = await db.query('INSERT INTO product_variant_groups (product_id, name, type, is_required) VALUES (?, ?, ?, 1)', [p1Id, 'Suhu', 'single']);
-    const vg1Id = vg1Res.insertId;
-    await db.query('INSERT INTO product_variant_options (group_id, name, price_modifier, is_default) VALUES (?, ?, ?, 1)', [vg1Id, 'Hot', 0]);
-    await db.query('INSERT INTO product_variant_options (group_id, name, price_modifier, is_default) VALUES (?, ?, ?, 0)', [vg1Id, 'Ice', 3000]);
+      // Variant: Suhu (Hot/Ice)
+      const [vg1Res] = await db.query('INSERT INTO product_variant_groups (product_id, name, type, is_required) VALUES (?, ?, ?, 1)', [p1Id, 'Suhu', 'single']);
+      const vg1Id = vg1Res.insertId;
+      await db.query('INSERT INTO product_variant_options (group_id, name, price_modifier, is_default) VALUES (?, ?, ?, 1)', [vg1Id, 'Hot', 0]);
+      await db.query('INSERT INTO product_variant_options (group_id, name, price_modifier, is_default) VALUES (?, ?, ?, 0)', [vg1Id, 'Ice', 3000]);
 
-    // Addon: Gula
-    const [ag1Res] = await db.query('INSERT INTO product_addon_groups (product_id, name, max_selection) VALUES (?, ?, 1)', [p1Id, 'Ekstra Gula']);
-    const ag1Id = ag1Res.insertId;
-    await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag1Id, 'Dengan Gula', 0]);
-    await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag1Id, 'Tanpa Gula', 0]);
+      // Addon: Gula
+      const [ag1Res] = await db.query('INSERT INTO product_addon_groups (product_id, name, max_selection) VALUES (?, ?, 1)', [p1Id, 'Ekstra Gula']);
+      const ag1Id = ag1Res.insertId;
+      await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag1Id, 'Dengan Gula', 0]);
+      await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag1Id, 'Tanpa Gula', 0]);
 
-    // PRODUK 2: Nasi Goreng (KITCHEN)
-    const [p2Res] = await db.query('INSERT IGNORE INTO products (category_id, name, slug, price, stock, is_available) VALUES (?, ?, ?, ?, ?, 1)', [catId2, 'Nasi Goreng Spesial', 'nasi-goreng-spesial', 35000, 50]);
-    const p2Id = p2Res.insertId || (await db.query('SELECT id FROM products WHERE slug="nasi-goreng-spesial"'))[0][0].id;
-    await db.query('INSERT IGNORE INTO product_stations (product_id, station_id) VALUES (?, ?)', [p2Id, ktnId]);
+      // PRODUK 2: Nasi Goreng (KITCHEN)
+      const [p2Res] = await db.query('INSERT IGNORE INTO products (category_id, name, slug, price, stock, is_available) VALUES (?, ?, ?, ?, ?, 1)', [catId2, 'Nasi Goreng Spesial', 'nasi-goreng-spesial', 35000, 50]);
+      const p2Id = p2Res.insertId || (await db.query('SELECT id FROM products WHERE slug="nasi-goreng-spesial"'))[0][0].id;
+      await db.query('INSERT IGNORE INTO product_stations (product_id, station_id) VALUES (?, ?)', [p2Id, ktnId]);
 
-    // Variant: Level Pedas
-    const [vg2Res] = await db.query('INSERT INTO product_variant_groups (product_id, name, type, is_required) VALUES (?, ?, ?, 1)', [p2Id, 'Level Pedas', 'single']);
-    const vg2Id = vg2Res.insertId;
-    await db.query('INSERT INTO product_variant_options (group_id, name) VALUES (?, ?)', [vg2Id, 'Tidak Pedas']);
-    await db.query('INSERT INTO product_variant_options (group_id, name) VALUES (?, ?)', [vg2Id, 'Sedang']);
-    await db.query('INSERT INTO product_variant_options (group_id, name) VALUES (?, ?)', [vg2Id, 'Sangat Pedas']);
+      // Variant: Level Pedas
+      const [vg2Res] = await db.query('INSERT INTO product_variant_groups (product_id, name, type, is_required) VALUES (?, ?, ?, 1)', [p2Id, 'Level Pedas', 'single']);
+      const vg2Id = vg2Res.insertId;
+      await db.query('INSERT INTO product_variant_options (group_id, name) VALUES (?, ?)', [vg2Id, 'Tidak Pedas']);
+      await db.query('INSERT INTO product_variant_options (group_id, name) VALUES (?, ?)', [vg2Id, 'Sedang']);
+      await db.query('INSERT INTO product_variant_options (group_id, name) VALUES (?, ?)', [vg2Id, 'Sangat Pedas']);
 
-    // Addon: Topping
-    const [ag2Res] = await db.query('INSERT INTO product_addon_groups (product_id, name, max_selection) VALUES (?, ?, 3)', [p2Id, 'Topping Tambahan']);
-    const ag2Id = ag2Res.insertId;
-    await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag2Id, 'Telur Ceplok', 5000]);
-    await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag2Id, 'Sosis', 7000]);
-    await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag2Id, 'Keju', 4000]);
+      // Addon: Topping
+      const [ag2Res] = await db.query('INSERT INTO product_addon_groups (product_id, name, max_selection) VALUES (?, ?, 3)', [p2Id, 'Topping Tambahan']);
+      const ag2Id = ag2Res.insertId;
+      await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag2Id, 'Telur Ceplok', 5000]);
+      await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag2Id, 'Sosis', 7000]);
+      await db.query('INSERT INTO product_addons (group_id, name, price) VALUES (?, ?, ?)', [ag2Id, 'Keju', 4000]);
+    } catch (demoErr) {
+      console.warn('  ⚠️ Warning seeder produk demo (dilewati):', demoErr.message);
+    }
 
     console.log('Seeding Demo selesai.');
     process.exit(0);
