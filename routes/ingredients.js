@@ -43,6 +43,25 @@ router.get('/', authenticate, authorize('admin', 'station'), async (req, res) =>
     sql += ' ORDER BY i.name';
     if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)); }
     const [rows] = await db.query(sql, params);
+    if (rows.length > 0) {
+      try {
+        const [conversions] = await db.query(
+          'SELECT id, ingredient_id, unit_name, unit_symbol, conversion_qty FROM ingredient_unit_conversions WHERE is_active = 1 ORDER BY sort_order ASC, conversion_qty DESC'
+        );
+        const convMap = {};
+        for (const c of conversions) {
+          if (!convMap[c.ingredient_id]) convMap[c.ingredient_id] = [];
+          convMap[c.ingredient_id].push(c);
+        }
+        for (const row of rows) {
+          row.conversions = convMap[row.id] || [];
+        }
+      } catch (_) {
+        for (const row of rows) {
+          row.conversions = [];
+        }
+      }
+    }
     res.json({ ingredients: rows, branch_id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -56,7 +75,16 @@ router.get('/:id', authenticate, authorize('admin', 'station'), async (req, res)
       'SELECT * FROM ingredient_stock_log WHERE ingredient_id=? ORDER BY created_at DESC LIMIT 30',
       [req.params.id]
     );
-    res.json({ ingredient: ing, stock_log: log });
+    let conversions = [];
+    try {
+      const [convRows] = await db.query(
+        'SELECT * FROM ingredient_unit_conversions WHERE ingredient_id=? AND is_active=1 ORDER BY sort_order, conversion_qty',
+        [req.params.id]
+      );
+      conversions = convRows;
+    } catch (_) {}
+    ing.conversions = conversions;
+    res.json({ ingredient: ing, stock_log: log, conversions });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

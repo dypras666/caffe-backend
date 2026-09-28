@@ -10,7 +10,7 @@ const { sanitizeInput } = require('../middleware/security');
 router.get('/', async (req, res) => {
   try {
     const [units] = await db.query(
-      `SELECT u.id, u.name, u.symbol, u.type, u.conversion_factor, u.is_active,
+      `SELECT u.id, u.name, u.symbol, u.type, u.base_unit_id, u.conversion_factor, u.is_active,
               b.name AS base_unit_name, b.symbol AS base_unit_symbol
        FROM units u
        LEFT JOIN units b ON b.id = u.base_unit_id

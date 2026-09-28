@@ -22,8 +22,8 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Rate limit
 const rateLimit = require('express-rate-limit');
@@ -165,35 +165,7 @@ app.delete('/api/users/:id', authenticate, async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
-// ─── DASHBOARD (public stats for gallery page) ──────────────────
-app.get('/api/dashboard/stats', async (req, res) => {
-  try {
-    const [[{ orders }]] = await db.query("SELECT COUNT(*) as orders FROM orders WHERE DATE(created_at) = CURDATE()");
-    const [[{ tables }]] = await db.query("SELECT COUNT(*) as tables FROM tables");
-    const [[{ products }]] = await db.query("SELECT COUNT(*) as products FROM products WHERE is_available = 1");
-    const [[{ users_count }]] = await db.query("SELECT COUNT(*) as users_count FROM users");
-    const [[{ revenue_today }]] = await db.query("SELECT COALESCE(SUM(total_amount), 0) as revenue_today FROM orders WHERE DATE(created_at) = CURDATE()");
-    const [[{ orders_count }]] = await db.query("SELECT COUNT(*) as orders_count FROM orders");
-    const [[{ total_revenue }]] = await db.query("SELECT COALESCE(SUM(total_amount), 0) as total_revenue FROM orders");
-    res.json({
-      revenue_today: revenue_today.toString(),
-      revenue_month: '0.00',
-      orders: parseInt(orders),
-      tables: parseInt(tables),
-      products: parseInt(products),
-      users: parseInt(users_count),
-      total_orders: parseInt(orders_count),
-      total_revenue: total_revenue.toString(),
-      tier: process.env.PRICING_TIER || 'free',
-      ram_mb: parseInt(process.env.RAM_MB || '64'),
-      cpu_cores: parseFloat(process.env.CPU_CORES || '0.25')
-    });
-  } catch (e) {
-    console.error('Stats error:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
+// ─── DASHBOARD — handled by routes/dashboard.js (see routeNames) ─
 
 // ─── SYSTEM INFO ──────────────────────────────────────────────
 app.get('/api/system/info', authenticate, async (req, res) => {

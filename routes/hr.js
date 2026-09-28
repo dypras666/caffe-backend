@@ -1613,20 +1613,16 @@ kioskRouter.post('/upload-bg', async (req, res) => {
       return res.status(400).json({ error: 'Format base64 tidak valid' });
     }
 
-    const fs = require('fs');
-    const path = require('path');
-    const ext = matches[1].includes('png') ? '.png' : (matches[1].includes('webp') ? '.webp' : '.jpg');
+    const storage = require('../services/StorageService');
+    const mimeType = matches[1];
+    const ext = mimeType.includes('png') ? '.png' : (mimeType.includes('webp') ? '.webp' : '.jpg');
     const filename = `kiosk-bg-${Date.now()}${ext}`;
-    const uploadDir = path.join(__dirname, '..', 'uploads');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-    const filePath = path.join(uploadDir, filename);
     const buffer = Buffer.from(matches[2], 'base64');
-    fs.writeFileSync(filePath, buffer);
 
-    const publicUrl = `/uploads/${filename}`;
-    res.json({ url: publicUrl, message: 'Background berhasil diunggah' });
+    const result = await storage.save(filename, buffer, mimeType);
+    res.json({ url: result.url, message: 'Background berhasil diunggah' });
   } catch (err) {
+    console.error('Kiosk upload-bg error:', err);
     res.status(500).json({ error: err.message });
   }
 });
