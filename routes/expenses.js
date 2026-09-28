@@ -118,9 +118,9 @@ router.get('/summary', authenticate, authorize('admin'), async (req, res) => {
     const expBranchParams = branch_id ? [branch_id] : [];
 
     const [[revenue]] = await db.query(
-      `SELECT COALESCE(SUM(total), 0) AS total FROM orders o
+      `SELECT COALESCE(SUM(COALESCE(o.paid_amount, o.total)), 0) AS total FROM orders o
        WHERE DATE(o.created_at) BETWEEN ? AND ?
-         AND o.payment_status = 'paid' AND o.order_status != 'cancelled'${branchWhere}`,
+         AND o.payment_status IN ('paid', 'partial') AND o.order_status != 'cancelled'${branchWhere}`,
       [dateFrom, dateTo, ...branchParams]
     );
     const [[expenseTotal]] = await db.query(

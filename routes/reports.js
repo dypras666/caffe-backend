@@ -72,7 +72,7 @@ router.get('/summary',
         // Total revenue + total orders
         db.query(
           `SELECT
-             COALESCE(SUM(o.total), 0) AS total_revenue,
+             COALESCE(SUM(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS total_revenue,
              COUNT(*) AS total_orders
            FROM orders o
            WHERE DATE(o.created_at) BETWEEN ? AND ?
@@ -82,11 +82,14 @@ router.get('/summary',
 
         // Cash revenue
         db.query(
-          `SELECT COALESCE(SUM(o.total), 0) AS cash_revenue
+          `SELECT COALESCE(SUM(CASE 
+             WHEN o.payment_status = 'paid' AND o.payment_method = 'cash' THEN COALESCE(o.paid_amount, o.total)
+             WHEN o.payment_status = 'partial' AND (o.dp_payment_method = 'cash' OR (o.dp_payment_method IS NULL AND o.payment_method = 'cash')) THEN COALESCE(o.paid_amount, o.dp_amount, 0)
+             ELSE 0
+           END), 0) AS cash_revenue
            FROM orders o
            WHERE DATE(o.created_at) BETWEEN ? AND ?
-             AND ${REVENUE_FILTER}
-             AND o.payment_method = 'cash'${extra2}`,
+             AND ${REVENUE_FILTER}${extra2}`,
           [date_from, date_to, ...f2]
         ),
 
@@ -103,7 +106,7 @@ router.get('/summary',
         db.query(
           `SELECT
              DATE(o.created_at) AS date,
-             COALESCE(SUM(o.total), 0) AS revenue,
+             COALESCE(SUM(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS revenue,
              COUNT(*) AS orders
            FROM orders o
            WHERE DATE(o.created_at) BETWEEN ? AND ?
@@ -118,7 +121,7 @@ router.get('/summary',
           `SELECT
              o.payment_method,
              COUNT(*) AS count,
-             COALESCE(SUM(o.total), 0) AS total
+             COALESCE(SUM(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS total
            FROM orders o
            WHERE DATE(o.created_at) BETWEEN ? AND ?
              AND ${REVENUE_FILTER}${extra5}
@@ -146,7 +149,7 @@ router.get('/summary',
         // Comparison: previous period
         db.query(
           `SELECT
-             COALESCE(SUM(o.total), 0) AS prev_revenue,
+             COALESCE(SUM(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS prev_revenue,
              COUNT(*) AS prev_orders
            FROM orders o
            WHERE DATE(o.created_at) BETWEEN ? AND ?
@@ -296,8 +299,8 @@ router.get('/hourly',
         `SELECT
            HOUR(o.created_at) AS hour,
            COUNT(*) AS orders,
-           COALESCE(SUM(o.total), 0) AS revenue,
-           COALESCE(AVG(o.total), 0) AS avg_order
+           COALESCE(SUM(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS revenue,
+           COALESCE(AVG(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS avg_order
          FROM orders o
          WHERE DATE(o.created_at) BETWEEN ? AND ?
            AND ${REVENUE_FILTER}${extra}
@@ -339,8 +342,8 @@ router.get('/tables',
            o.table_number,
            r.name AS room_name,
            COUNT(DISTINCT o.id) AS orders,
-           COALESCE(SUM(o.total), 0) AS revenue,
-           COALESCE(AVG(o.total), 0) AS avg_order,
+           COALESCE(SUM(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS revenue,
+           COALESCE(AVG(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS avg_order,
            COALESCE(SUM(oi.quantity), 0) AS total_items
          FROM orders o
          LEFT JOIN tables t ON t.table_number = o.table_number
@@ -377,10 +380,11 @@ router.get('/staff',
   authorize('admin', 'kasir'),
   async (req, res) => {
     try {
-      const { date_from, date_to, branch_id } = parseDateRange(req.query);
+      const { date_from, date_to, branch_id, cashier_id } = parseDateRange(req.query);
       const fp = [];
       let extra = '';
-      if (branch_id) { extra += ' AND o.branch_id = ?'; fp.push(branch_id); }
+      if (branch_id && branch_id !== 'all') { extra += ' AND o.branch_id = ?'; fp.push(branch_id); }
+      if (cashier_id && cashier_id !== 'all') { extra += ' AND o.served_by = ?'; fp.push(cashier_id); }
 
       const [rows] = await db.query(
         `SELECT
@@ -388,8 +392,8 @@ router.get('/staff',
            u.name,
            u.role,
            COUNT(DISTINCT o.id) AS orders_handled,
-           COALESCE(SUM(o.total), 0) AS revenue_handled,
-           COALESCE(AVG(o.total), 0) AS avg_order
+           COALESCE(SUM(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS revenue_handled,
+           COALESCE(AVG(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS avg_order
          FROM orders o
          JOIN users u ON u.id = o.served_by
          WHERE DATE(o.created_at) BETWEEN ? AND ?
@@ -430,8 +434,8 @@ router.get('/shifts',
            u.name AS opened_by_name,
            uc.name AS closed_by_name,
            COUNT(DISTINCT o.id) AS total_orders,
-           COALESCE(SUM(o.total), 0) AS total_revenue,
-           COALESCE(SUM(CASE WHEN o.payment_method = 'cash' THEN o.total ELSE 0 END), 0) AS cash_revenue
+           COALESCE(SUM(COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END)), 0) AS calculated_revenue,
+           COALESCE(SUM(CASE WHEN o.payment_method = 'cash' THEN COALESCE(o.paid_amount, CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END) ELSE 0 END), 0) AS calculated_cash_revenue
          FROM shifts s
          LEFT JOIN users u ON u.id = s.opened_by
          LEFT JOIN users uc ON uc.id = s.closed_by
@@ -447,8 +451,8 @@ router.get('/shifts',
         shifts: rows.map(r => ({
           ...r,
           total_orders: parseInt(r.total_orders, 10),
-          total_revenue: parseFloat(r.total_revenue),
-          cash_revenue: parseFloat(r.cash_revenue),
+          total_revenue: r.status === 'closed' && parseFloat(r.total_revenue || 0) > 0 ? parseFloat(r.total_revenue) : parseFloat(r.calculated_revenue),
+          cash_revenue: r.status === 'closed' && parseFloat(r.cash_revenue || 0) > 0 ? parseFloat(r.cash_revenue) : parseFloat(r.calculated_cash_revenue),
         })),
       });
     } catch (error) {
@@ -458,4 +462,169 @@ router.get('/shifts',
   }
 );
 
+// ─── GET /api/reports/services ────────────────────────────────────────────────
+router.get('/services',
+  authenticate,
+  authorize('admin', 'kasir'),
+  async (req, res) => {
+    try {
+      const { date_from, date_to, branch_id, cashier_id } = parseDateRange(req.query);
+      const { service_type, service_status } = req.query;
+
+      let whereClause = `
+        o.order_status != 'deleted'
+        AND (o.order_type IN ('booking', 'preorder', 'service') OR o.service_date IS NOT NULL)
+        AND DATE(o.created_at) BETWEEN ? AND ?
+      `;
+      const baseParams = [date_from, date_to];
+
+      if (branch_id && branch_id !== 'all') {
+        whereClause += ' AND o.branch_id = ?';
+        baseParams.push(branch_id);
+      }
+      if (cashier_id && cashier_id !== 'all') {
+        whereClause += ' AND o.served_by = ?';
+        baseParams.push(cashier_id);
+      }
+      if (service_type && service_type !== 'all') {
+        whereClause += ' AND o.order_type = ?';
+        baseParams.push(service_type);
+      }
+      if (service_status && service_status !== 'all') {
+        whereClause += ' AND o.service_status = ?';
+        baseParams.push(service_status);
+      }
+
+      // 1. Summary Metrics
+      const [[summary]] = await db.query(
+        `SELECT
+           COUNT(*) AS total_orders,
+           COALESCE(SUM(o.total), 0) AS total_value,
+           COALESCE(SUM(o.paid_amount), 0) AS total_paid,
+           COALESCE(SUM(COALESCE(o.remaining_amount, GREATEST(0, o.total - COALESCE(o.paid_amount, 0)))), 0) AS total_remaining,
+           COALESCE(SUM(CASE WHEN o.order_type = 'booking' THEN 1 ELSE 0 END), 0) AS total_booking,
+           COALESCE(SUM(CASE WHEN o.order_type = 'preorder' THEN 1 ELSE 0 END), 0) AS total_preorder,
+           COALESCE(SUM(CASE WHEN o.order_type = 'service' OR (o.order_type NOT IN ('booking', 'preorder') AND o.service_date IS NOT NULL) THEN 1 ELSE 0 END), 0) AS total_service,
+           COALESCE(SUM(CASE WHEN o.service_status = 'pending' OR o.service_status IS NULL THEN 1 ELSE 0 END), 0) AS status_pending,
+           COALESCE(SUM(CASE WHEN o.service_status = 'confirmed' THEN 1 ELSE 0 END), 0) AS status_confirmed,
+           COALESCE(SUM(CASE WHEN o.service_status = 'in_progress' THEN 1 ELSE 0 END), 0) AS status_in_progress,
+           COALESCE(SUM(CASE WHEN o.service_status = 'completed' THEN 1 ELSE 0 END), 0) AS status_completed,
+           COALESCE(SUM(CASE WHEN o.service_status = 'cancelled' THEN 1 ELSE 0 END), 0) AS status_cancelled
+         FROM orders o
+         WHERE ${whereClause}`,
+        baseParams
+      );
+
+      // 2. Daily Trend for chart
+      const [dailyTrend] = await db.query(
+        `SELECT
+           DATE_FORMAT(COALESCE(o.service_date, o.created_at), '%Y-%m-%d') AS date,
+           DATE_FORMAT(COALESCE(o.service_date, o.created_at), '%d/%m') AS label,
+           COUNT(*) AS total_orders,
+           COALESCE(SUM(o.total), 0) AS total_value,
+           COALESCE(SUM(o.paid_amount), 0) AS total_paid,
+           COALESCE(SUM(CASE WHEN o.order_type = 'booking' THEN 1 ELSE 0 END), 0) AS booking_count,
+           COALESCE(SUM(CASE WHEN o.order_type = 'preorder' THEN 1 ELSE 0 END), 0) AS preorder_count,
+           COALESCE(SUM(CASE WHEN o.order_type = 'service' THEN 1 ELSE 0 END), 0) AS service_count
+         FROM orders o
+         WHERE ${whereClause}
+         GROUP BY DATE_FORMAT(COALESCE(o.service_date, o.created_at), '%Y-%m-%d'), DATE_FORMAT(COALESCE(o.service_date, o.created_at), '%d/%m')
+         ORDER BY date ASC`,
+        baseParams
+      );
+
+      // 3. Status Breakdown for chart
+      const [statusBreakdown] = await db.query(
+        `SELECT
+           COALESCE(o.service_status, 'pending') AS status,
+           COUNT(*) AS count,
+           COALESCE(SUM(o.total), 0) AS value
+         FROM orders o
+         WHERE ${whereClause}
+         GROUP BY COALESCE(o.service_status, 'pending')`,
+        baseParams
+      );
+
+      // 4. Type Breakdown for chart
+      const [typeBreakdown] = await db.query(
+        `SELECT
+           CASE 
+             WHEN o.order_type = 'booking' THEN 'Booking / Reservasi'
+             WHEN o.order_type = 'preorder' THEN 'Pre-Order'
+             ELSE 'Layanan Jasa'
+           END AS type_label,
+           o.order_type,
+           COUNT(*) AS count,
+           COALESCE(SUM(o.total), 0) AS value
+         FROM orders o
+         WHERE ${whereClause}
+         GROUP BY o.order_type`,
+        baseParams
+      );
+
+      // 5. Detailed Orders List
+      const [orders] = await db.query(
+        `SELECT
+           o.id, o.order_number, o.customer_name, o.customer_phone, o.customer_email,
+           o.order_type, o.service_date, o.service_time, o.service_person_count, o.service_status,
+           o.total, o.paid_amount, o.dp_amount, o.remaining_amount,
+           o.payment_method, o.payment_status, o.notes, o.created_at,
+           b.name AS branch_name,
+           u.name AS cashier_name
+         FROM orders o
+         LEFT JOIN branches b ON b.id = o.branch_id
+         LEFT JOIN users u ON u.id = o.served_by
+         WHERE ${whereClause}
+         ORDER BY COALESCE(o.service_date, o.created_at) DESC, o.id DESC
+         LIMIT 200`,
+        baseParams
+      );
+
+      res.json({
+        summary: {
+          total_orders: parseInt(summary.total_orders || 0),
+          total_value: parseFloat(summary.total_value || 0),
+          total_paid: parseFloat(summary.total_paid || 0),
+          total_remaining: parseFloat(summary.total_remaining || 0),
+          total_booking: parseInt(summary.total_booking || 0),
+          total_preorder: parseInt(summary.total_preorder || 0),
+          total_service: parseInt(summary.total_service || 0),
+          status_counts: {
+            pending: parseInt(summary.status_pending || 0),
+            confirmed: parseInt(summary.status_confirmed || 0),
+            in_progress: parseInt(summary.status_in_progress || 0),
+            completed: parseInt(summary.status_completed || 0),
+            cancelled: parseInt(summary.status_cancelled || 0),
+          }
+        },
+        daily_trend: dailyTrend.map(d => ({
+          ...d,
+          total_orders: parseInt(d.total_orders),
+          total_value: parseFloat(d.total_value),
+          total_paid: parseFloat(d.total_paid),
+          booking_count: parseInt(d.booking_count),
+          preorder_count: parseInt(d.preorder_count),
+          service_count: parseInt(d.service_count),
+        })),
+        status_breakdown: statusBreakdown.map(s => ({
+          status: s.status,
+          count: parseInt(s.count),
+          value: parseFloat(s.value),
+        })),
+        type_breakdown: typeBreakdown.map(t => ({
+          type_label: t.type_label,
+          order_type: t.order_type,
+          count: parseInt(t.count),
+          value: parseFloat(t.value),
+        })),
+        orders,
+      });
+    } catch (error) {
+      console.error('Reports services error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
 module.exports = router;
+

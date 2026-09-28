@@ -4,6 +4,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { sanitizeInput } = require('../middleware/security');
+const { isDemoTenant } = require('../middleware/demoProtection');
 
 // Helper: log activity
 const logActivity = async (userId, action, recordId, oldValues, newValues) => {
@@ -267,6 +268,37 @@ router.put('/:id',
       }
 
       const old = existing[0];
+
+      if (await isDemoTenant()) {
+        const isMainAdmin = old.role === 'admin' || old.email.startsWith('owner@') || old.email.startsWith('admin@');
+        if (isMainAdmin) {
+          if (req.body.password) {
+            return res.status(403).json({
+              error: 'Mode Demo Aktif',
+              message: 'Password akun admin utama dilindungi dan tidak dapat diubah pada demo kafe.',
+            });
+          }
+          if (req.body.email && req.body.email !== old.email) {
+            return res.status(403).json({
+              error: 'Mode Demo Aktif',
+              message: 'Email akun admin utama dilindungi dan tidak dapat diubah pada demo kafe.',
+            });
+          }
+          if (req.body.role && req.body.role !== 'admin') {
+            return res.status(403).json({
+              error: 'Mode Demo Aktif',
+              message: 'Role admin utama dilindungi dan tidak dapat diubah pada demo kafe.',
+            });
+          }
+          if (req.body.status && req.body.status !== 'active') {
+            return res.status(403).json({
+              error: 'Mode Demo Aktif',
+              message: 'Status admin utama tidak dapat diubah pada demo kafe.',
+            });
+          }
+        }
+      }
+
       const allowedFields = ['name', 'phone', 'role', 'status', 'avatar', 'is_priority', 'branch_id', 'station_id'];
       const updates = [];
       const values = [];
@@ -328,6 +360,20 @@ router.delete('/:id',
 
       if (existing.length === 0) {
         return res.status(404).json({ error: 'User not found' });
+      }
+
+      if (await isDemoTenant()) {
+        const isMainAdmin = existing[0].role === 'admin' ||
+          (existing[0].email && (
+            existing[0].email.toLowerCase().startsWith('admin@') ||
+            existing[0].email.toLowerCase().startsWith('owner@')
+          ));
+        if (isMainAdmin) {
+          return res.status(403).json({
+            error: 'Mode Demo Aktif',
+            message: 'Akun admin utama dilindungi dan tidak dapat dihapus pada demo kafe.',
+          });
+        }
       }
 
       await db.query('DELETE FROM users WHERE id = ?', [userId]);

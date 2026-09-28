@@ -8,7 +8,7 @@ const { sanitizeInput } = require('../middleware/security');
 // Get all products (public)
 router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { category, status, popular, available, search } = req.query;
+    const { category, status, popular, available, search, product_type, service_type } = req.query;
     const branch_id = req.query.branch_id || req.user?.branch_id || null;
 
     let query = `
@@ -22,6 +22,16 @@ router.get('/', optionalAuth, async (req, res) => {
     if (category) {
       query += ' AND p.category_id = ?';
       params.push(category);
+    }
+
+    if (product_type) {
+      query += ' AND p.product_type = ?';
+      params.push(product_type);
+    }
+
+    if (service_type) {
+      query += ' AND p.service_type = ?';
+      params.push(service_type);
     }
 
     if (status && req.user?.role === 'admin') {
@@ -228,7 +238,8 @@ router.post('/',
       const {
         category_id, name, slug, description, price, cost_price,
         sku, barcode, stock, min_stock, unit, image, gallery,
-        is_popular, is_available, status, meta_data, custom_fields
+        is_popular, is_available, status, meta_data, custom_fields,
+        product_type, service_type, duration_minutes, lead_time_days, requires_schedule
       } = req.body;
 
       // Generate slug if not provided
@@ -239,8 +250,9 @@ router.post('/',
         `INSERT INTO products (
           category_id, name, slug, description, price, cost_price,
           sku, barcode, stock, min_stock, unit, image, gallery,
-          is_popular, is_available, status, meta_data, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          is_popular, is_available, status, meta_data, created_by,
+          product_type, service_type, duration_minutes, lead_time_days, requires_schedule
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           category_id || null, name, productSlug, description || null,
           price, cost_price || null, sku || null, barcode || null,
@@ -249,7 +261,12 @@ router.post('/',
           is_popular || false, is_available || true,
           status || 'active',
           meta_data ? JSON.stringify(meta_data) : null,
-          req.user.id
+          req.user.id,
+          product_type || 'product',
+          service_type || null,
+          duration_minutes ? parseInt(duration_minutes) : null,
+          lead_time_days ? parseInt(lead_time_days) : 0,
+          requires_schedule ? 1 : 0
         ]
       );
 
@@ -268,12 +285,12 @@ router.post('/',
       // Log activity
       await db.query(
         'INSERT INTO activity_logs (user_id, action, table_name, record_id, new_values) VALUES (?, ?, ?, ?, ?)',
-        [req.user.id, 'create_product', 'products', productId, JSON.stringify({ name, price, sku })]
+        [req.user.id, 'create_product', 'products', productId, JSON.stringify({ name, price, sku, product_type })]
       );
 
       res.status(201).json({
         message: 'Product created successfully',
-        product: { id: productId, name, slug: productSlug }
+        product: { id: productId, name, slug: productSlug, product_type: product_type || 'product' }
       });
     } catch (error) {
       console.error('Create product error:', error);
@@ -303,7 +320,8 @@ router.put('/:id',
       const allowedFields = [
         'category_id', 'name', 'slug', 'description', 'price', 'cost_price',
         'sku', 'barcode', 'min_stock', 'unit', 'image', 'gallery',
-        'is_popular', 'is_available', 'status', 'meta_data'
+        'is_popular', 'is_available', 'status', 'meta_data',
+        'product_type', 'service_type', 'duration_minutes', 'lead_time_days', 'requires_schedule'
       ];
 
       const updates = [];

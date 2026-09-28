@@ -1300,6 +1300,64 @@ const MIGRATIONS = [
     sql: `
       ALTER TABLE order_items ADD COLUMN IF NOT EXISTS station_notes TEXT DEFAULT NULL;
     `
+  },
+  {
+    id: '067_products_services_and_orders',
+    sql: `
+      ALTER TABLE products
+        ADD COLUMN IF NOT EXISTS product_type ENUM('product', 'service') DEFAULT 'product',
+        ADD COLUMN IF NOT EXISTS service_type VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS duration_minutes INT DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS lead_time_days INT DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS requires_schedule TINYINT(1) DEFAULT 0;
+
+      ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS service_date DATE DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS service_time VARCHAR(20) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS service_person_count INT DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS service_status VARCHAR(50) DEFAULT 'pending';
+
+      ALTER TABLE order_items
+        ADD COLUMN IF NOT EXISTS service_date DATE DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS service_time VARCHAR(20) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS service_details TEXT DEFAULT NULL;
+    `
+  },
+  {
+    id: '068_orders_dp_and_payments',
+    sql: `
+      ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(10,2) DEFAULT 0.00,
+        ADD COLUMN IF NOT EXISTS dp_amount DECIMAL(10,2) DEFAULT 0.00,
+        ADD COLUMN IF NOT EXISTS remaining_amount DECIMAL(10,2) DEFAULT 0.00,
+        ADD COLUMN IF NOT EXISTS dp_payment_method VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS dp_paid_at TIMESTAMP NULL DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS settlement_payment_method VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS settlement_paid_at TIMESTAMP NULL DEFAULT NULL;
+
+      CREATE TABLE IF NOT EXISTS order_payments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        payment_type ENUM('full', 'dp', 'settlement', 'refund') DEFAULT 'full',
+        amount DECIMAL(10,2) NOT NULL,
+        payment_method VARCHAR(50) NOT NULL DEFAULT 'cash',
+        payment_status ENUM('paid', 'pending', 'cancelled') DEFAULT 'paid',
+        notes VARCHAR(255) NULL,
+        shift_id INT NULL,
+        cashier_id INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (order_id),
+        INDEX (shift_id),
+        INDEX (created_at)
+      );
+
+      UPDATE orders SET paid_amount = total, remaining_amount = 0.00 WHERE payment_status = 'paid' AND (paid_amount IS NULL OR paid_amount = 0.00);
+      UPDATE orders SET remaining_amount = total WHERE payment_status != 'paid' AND (remaining_amount IS NULL OR remaining_amount = 0.00);
+      INSERT IGNORE INTO order_payments (order_id, payment_type, amount, payment_method, payment_status, shift_id, cashier_id, created_at)
+      SELECT id, 'full', paid_amount, COALESCE(payment_method, 'cash'), 'paid', shift_id, served_by, created_at
+      FROM orders
+      WHERE paid_amount > 0 AND id NOT IN (SELECT order_id FROM order_payments);
+    `
   }
 ];
 

@@ -20,6 +20,77 @@ async function nextShiftNumber() {
   finally { conn.release(); }
 }
 
+// ─── Financial helpers for shifts (DP, full, and settlements) ───
+async function getShiftFinancials(shiftId) {
+  const [[payActuals]] = await db.query(
+    `SELECT
+       COUNT(*) AS total_payments,
+       COALESCE(SUM(amount), 0) AS total_revenue,
+       COALESCE(SUM(CASE WHEN payment_method='cash' THEN amount ELSE 0 END), 0) AS cash_revenue,
+       COALESCE(SUM(CASE WHEN payment_method!='cash' THEN amount ELSE 0 END), 0) AS non_cash_revenue
+     FROM order_payments
+     WHERE shift_id = ? AND payment_status = 'paid'`,
+    [shiftId]
+  );
+
+  const [[orderActuals]] = await db.query(
+    `SELECT
+       COUNT(*) AS total_orders,
+       COALESCE(SUM(paid_amount), 0) AS legacy_paid,
+       COALESCE(SUM(CASE WHEN payment_method='cash' THEN paid_amount ELSE 0 END), 0) AS legacy_cash,
+       COALESCE(SUM(CASE WHEN payment_method!='cash' THEN paid_amount ELSE 0 END), 0) AS legacy_non_cash,
+       COALESCE(SUM(CASE WHEN payment_status != 'paid' THEN remaining_amount ELSE 0 END), 0) AS pending_revenue
+     FROM orders
+     WHERE shift_id = ? AND order_status NOT IN ('cancelled', 'deleted')`,
+    [shiftId]
+  );
+
+  const totalPayments = parseInt(payActuals?.total_payments || 0);
+
+  if (totalPayments > 0) {
+    return {
+      total_orders: parseInt(orderActuals.total_orders || 0),
+      total_revenue: parseFloat(payActuals.total_revenue || 0),
+      cash_revenue: parseFloat(payActuals.cash_revenue || 0),
+      non_cash_revenue: parseFloat(payActuals.non_cash_revenue || 0),
+      pending_revenue: parseFloat(orderActuals.pending_revenue || 0),
+    };
+  }
+
+  // Fallback for legacy shifts
+  return {
+    total_orders: parseInt(orderActuals.total_orders || 0),
+    total_revenue: parseFloat(orderActuals.legacy_paid || 0),
+    cash_revenue: parseFloat(orderActuals.legacy_cash || 0),
+    non_cash_revenue: parseFloat(orderActuals.legacy_non_cash || 0),
+    pending_revenue: parseFloat(orderActuals.pending_revenue || 0),
+  };
+}
+
+async function getShiftPaymentBreakdown(shiftId) {
+  let [breakdown] = await db.query(
+    `SELECT payment_method, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total
+     FROM order_payments
+     WHERE shift_id = ? AND payment_status = 'paid'
+     GROUP BY payment_method
+     ORDER BY total DESC`,
+    [shiftId]
+  );
+
+  if (!breakdown || breakdown.length === 0) {
+    [breakdown] = await db.query(
+      `SELECT payment_method, COUNT(*) AS count, COALESCE(SUM(paid_amount), 0) AS total
+       FROM orders
+       WHERE shift_id = ? AND order_status NOT IN ('cancelled', 'deleted') AND paid_amount > 0
+       GROUP BY payment_method
+       ORDER BY total DESC`,
+      [shiftId]
+    );
+  }
+
+  return breakdown || [];
+}
+
 // ─── GET /api/shifts — list shifts (admin/kasir) ─────────────
 // Query params: status, date_from, date_to, page, limit
 router.get('/', authenticate, authorize('admin', 'kasir'), async (req, res) => {
@@ -88,29 +159,18 @@ router.get('/current', authenticate, async (req, res) => {
     const [[shift]] = await db.query(query, params);
     if (!shift) return res.json({ shift: null });
 
-    // Live stats from actual orders
-    const [[live]] = await db.query(
-      `SELECT
-         COUNT(*)                                                                AS total_orders,
-         COALESCE(SUM(total), 0)                                                 AS total_revenue,
-         COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END), 0) AS cash_revenue,
-         COALESCE(SUM(CASE WHEN payment_status='pending' THEN total ELSE 0 END), 0) AS pending_revenue
-       FROM orders
-       WHERE shift_id = ? AND order_status NOT IN ('cancelled')`,
-      [shift.id]
-    );
-
-    const cashRevenue   = parseFloat(live.cash_revenue);
-    const expectedCash  = parseFloat(shift.opening_cash) + cashRevenue;
+    // Live stats from actual orders and payments
+    const stats = await getShiftFinancials(shift.id);
+    const expectedCash = parseFloat(shift.opening_cash) + stats.cash_revenue;
 
     res.json({
       shift: {
         ...shift,
-        live_total_orders:  parseInt(live.total_orders),
-        live_total_revenue: parseFloat(live.total_revenue),
-        live_cash_revenue:  cashRevenue,
+        live_total_orders:  stats.total_orders,
+        live_total_revenue: stats.total_revenue,
+        live_cash_revenue:  stats.cash_revenue,
         live_expected_cash: expectedCash,
-        live_pending:       parseFloat(live.pending_revenue),
+        live_pending:       stats.pending_revenue,
       },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -194,19 +254,10 @@ router.put('/:id/close', authenticate, authorize('admin', 'kasir'), async (req, 
       return res.status(403).json({ error: 'Anda tidak berhak menutup shift ini' });
     }
 
-    // Recalculate from actual orders linked to shift
-    const [[actuals]] = await db.query(
-      `SELECT
-         COUNT(*)                                                                AS total_orders,
-         COALESCE(SUM(total), 0)                                                 AS total_revenue,
-         COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END), 0) AS cash_revenue
-       FROM orders
-       WHERE shift_id = ? AND order_status NOT IN ('cancelled')
-         AND payment_status IN ('paid','partial')`,
-      [shift.id]
-    );
+    // Recalculate actual payments received during this shift
+    const actuals = await getShiftFinancials(shift.id);
 
-    const cashRevenue    = parseFloat(actuals.cash_revenue);
+    const cashRevenue    = actuals.cash_revenue;
     const expectedCash   = parseFloat(shift.opening_cash) + cashRevenue;
     const cashDifference = parseFloat(closing_cash) - expectedCash;
 
@@ -221,7 +272,7 @@ router.put('/:id/close', authenticate, authorize('admin', 'kasir'), async (req, 
       [
         req.user.id, parseFloat(closing_cash),
         expectedCash, cashDifference,
-        parseInt(actuals.total_orders), parseFloat(actuals.total_revenue), cashRevenue,
+        actuals.total_orders, actuals.total_revenue, cashRevenue,
         handover_cash !== undefined ? parseFloat(handover_cash) : null,
         notes || null, notes || null,
         shift.id,
@@ -243,13 +294,7 @@ router.put('/:id/close', authenticate, authorize('admin', 'kasir'), async (req, 
        WHERE s.id = ?`, [shift.id]
     );
 
-    const [paymentBreakdown] = await db.query(
-      `SELECT payment_method, COUNT(*) AS count, COALESCE(SUM(total),0) AS total
-       FROM orders WHERE shift_id = ? AND order_status NOT IN ('cancelled')
-         AND payment_status IN ('paid','partial')
-       GROUP BY payment_method ORDER BY total DESC`,
-      [shift.id]
-    );
+    const paymentBreakdown = await getShiftPaymentBreakdown(shift.id);
 
     const [topItems] = await db.query(
       `SELECT oi.product_name, SUM(oi.quantity) AS qty, COALESCE(SUM(oi.subtotal),0) AS revenue
@@ -262,10 +307,10 @@ router.put('/:id/close', authenticate, authorize('admin', 'kasir'), async (req, 
     res.json({
       shift: updatedShift,
       summary: {
-        total_orders:      parseInt(actuals.total_orders),
-        total_revenue:     parseFloat(actuals.total_revenue),
+        total_orders:      actuals.total_orders,
+        total_revenue:     actuals.total_revenue,
         cash_revenue:      cashRevenue,
-        non_cash_revenue:  parseFloat(actuals.total_revenue) - cashRevenue,
+        non_cash_revenue:  actuals.non_cash_revenue,
         opening_cash:      parseFloat(shift.opening_cash),
         closing_cash:      parseFloat(closing_cash),
         expected_cash:     expectedCash,
@@ -293,29 +338,9 @@ router.get('/:id/report', authenticate, authorize('admin', 'kasir'), async (req,
 
     const revenueFilter = `order_status NOT IN ('cancelled') AND payment_status IN ('paid', 'partial')`;
 
-    // Order summary
-    const [[orderSummary]] = await db.query(
-      `SELECT
-         COUNT(*) AS total_orders,
-         COALESCE(SUM(total), 0) AS total_revenue,
-         COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END), 0) AS cash_revenue,
-         COALESCE(SUM(CASE WHEN payment_method != 'cash' THEN total ELSE 0 END), 0) AS non_cash_revenue
-       FROM orders
-       WHERE shift_id = ? AND ${revenueFilter}`,
-      [shift.id]
-    );
-
-    // Payment breakdown
-    const [paymentBreakdown] = await db.query(
-      `SELECT payment_method,
-              COUNT(*) AS count,
-              COALESCE(SUM(total), 0) AS total
-       FROM orders
-       WHERE shift_id = ? AND ${revenueFilter}
-       GROUP BY payment_method
-       ORDER BY total DESC`,
-      [shift.id]
-    );
+    // Financial summary & breakdown using helpers
+    const orderSummary = await getShiftFinancials(shift.id);
+    const paymentBreakdown = await getShiftPaymentBreakdown(shift.id);
 
     // Top items sold (top 5)
     const [topItems] = await db.query(
@@ -387,18 +412,8 @@ router.get('/:id/pre-close-summary', authenticate, authorize('admin', 'kasir'), 
     if (!shift) return res.status(404).json({ error: 'Shift tidak ditemukan' });
 
     // 1. Revenue
-    const [[actuals]] = await db.query(
-      `SELECT
-         COUNT(*)                                                                AS total_orders,
-         COALESCE(SUM(total), 0)                                                 AS total_revenue,
-         COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END), 0) AS cash_revenue
-       FROM orders
-       WHERE shift_id = ? AND order_status NOT IN ('cancelled', 'deleted')
-         AND payment_status IN ('paid','partial')`,
-      [shift.id]
-    );
-
-    const cashRevenue = parseFloat(actuals.cash_revenue);
+    const actuals = await getShiftFinancials(shift.id);
+    const cashRevenue = actuals.cash_revenue;
     const expectedCash = parseFloat(shift.opening_cash) + cashRevenue;
 
     // 2. Unpaid Orders

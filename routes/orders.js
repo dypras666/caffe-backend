@@ -68,7 +68,7 @@ const resolveItems = async (items) => {
   const resolvedItems = [];
   for (const item of items) {
     const [[product]] = await db.query(
-      'SELECT id, name, price, status FROM products WHERE id = ?',
+      'SELECT id, name, price, status, product_type, service_type FROM products WHERE id = ?',
       [item.product_id]
     );
     if (!product) throw Object.assign(new Error(`Product ${item.product_id} tidak ditemukan`), { statusCode: 400 });
@@ -127,6 +127,11 @@ const resolveItems = async (items) => {
       notes: item.notes || null,
       variants_selected: variantsSelected.length ? JSON.stringify(variantsSelected) : null,
       addons_selected: addonsSelected.length ? JSON.stringify(addonsSelected) : null,
+      product_type: product.product_type || 'product',
+      service_type: product.service_type || null,
+      service_date: item.service_date || null,
+      service_time: item.service_time || null,
+      service_details: item.service_details ? (typeof item.service_details === 'object' ? JSON.stringify(item.service_details) : String(item.service_details)) : null,
     });
   }
   return resolvedItems;
@@ -149,12 +154,14 @@ const insertOrderItems = async (orderId, resolvedItems) => {
     await db.query(
       `INSERT INTO order_items
          (order_id, product_id, product_name, product_price, unit_price, addons_total,
-          quantity, subtotal, notes, variants_selected, addons_selected, station_id, station_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          quantity, subtotal, notes, variants_selected, addons_selected, station_id, station_status,
+          service_date, service_time, service_details)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [orderId, item.product_id, item.product_name, item.product_price, item.unit_price,
        item.addons_total, item.quantity, item.subtotal, item.notes,
        item.variants_selected, item.addons_selected,
-       stationId, stationId ? 'pending' : null]
+       stationId, stationId ? 'pending' : null,
+       item.service_date || null, item.service_time || null, item.service_details || null]
     );
   }
 };
@@ -183,7 +190,9 @@ router.get('/',
     query('limit').optional().isInt({ min: 1, max: 500 }),
     query('status').optional().isIn(['pending', 'preparing', 'ready', 'completed', 'cancelled']),
     query('payment_status').optional().isIn(['pending', 'paid', 'partial', 'refund']),
-    query('order_type').optional().isIn(['dine-in', 'takeaway', 'delivery']),
+    query('order_type').optional().isIn(['dine-in', 'takeaway', 'delivery', 'booking', 'preorder', 'service']),
+    query('service_status').optional().isIn(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
+    query('service_date').optional().isISO8601(),
     query('date_from').optional().isISO8601(),
     query('date_to').optional().isISO8601(),
   ],
@@ -197,10 +206,20 @@ router.get('/',
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 10;
       const offset = (page - 1) * limit;
-      const { status, payment_status, order_type, date_from, date_to, served_by, search, branch_id } = req.query;
+      const { status, payment_status, order_type, date_from, date_to, served_by, search, branch_id, service_status, service_date } = req.query;
 
       let baseQuery = 'FROM orders o LEFT JOIN users u ON u.id = o.served_by LEFT JOIN branches b ON b.id = o.branch_id WHERE o.order_status != "deleted"';
       const params = [];
+
+      if (service_status) {
+        baseQuery += ' AND o.service_status = ?';
+        params.push(service_status);
+      }
+
+      if (service_date) {
+        baseQuery += ' AND o.service_date = ?';
+        params.push(service_date);
+      }
 
       // RBAC: kasir sees all orders in their branch, waiter sees their own only
       if (req.user.role === 'kasir') {
@@ -261,7 +280,7 @@ router.get('/',
       const [[{ total_revenue, total_revenue_paid }]] = await db.query(
         `SELECT
            COALESCE(SUM(CASE WHEN o.order_status = 'completed' THEN o.total ELSE 0 END), 0) AS total_revenue,
-           COALESCE(SUM(CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END), 0) AS total_revenue_paid
+           COALESCE(SUM(o.paid_amount), 0) AS total_revenue_paid
          ${baseQuery}`,
         params
       );
@@ -269,6 +288,9 @@ router.get('/',
       const [orders] = await db.query(
         `SELECT o.id, o.order_number, o.customer_name, o.customer_email, o.customer_phone,
                 o.table_id, o.table_number, o.order_type, o.subtotal, o.tax, o.discount, o.total,
+                o.paid_amount, o.dp_amount, o.remaining_amount, o.dp_payment_method, o.dp_paid_at,
+                o.settlement_payment_method, o.settlement_paid_at,
+                o.service_date, o.service_time, o.service_person_count, o.service_status,
                 o.payment_method, o.payment_status, o.order_status, o.notes,
                 o.served_by, u.name AS served_by_name, o.branch_id, b.name AS branch_name,
                 o.created_at, o.updated_at
@@ -289,6 +311,66 @@ router.get('/',
       });
     } catch (error) {
       console.error('Get orders error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// GET /services/stats — summary counts for ServicesPage card totals
+router.get('/services/stats',
+  authenticate,
+  authorize('admin', 'kasir', 'waiter'),
+  async (req, res) => {
+    try {
+      const { order_type, branch_id } = req.query;
+      let sql = `
+        SELECT 
+          COUNT(*) AS total,
+          COALESCE(SUM(CASE WHEN o.service_status = 'pending' OR o.service_status IS NULL THEN 1 ELSE 0 END), 0) AS pending,
+          COALESCE(SUM(CASE WHEN o.service_status = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmed,
+          COALESCE(SUM(CASE WHEN o.service_status = 'in_progress' THEN 1 ELSE 0 END), 0) AS in_progress,
+          COALESCE(SUM(CASE WHEN o.service_status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+          COALESCE(SUM(CASE WHEN o.service_status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
+          COALESCE(SUM(o.total), 0) AS total_value,
+          COALESCE(SUM(o.paid_amount), 0) AS total_paid,
+          COALESCE(SUM(COALESCE(o.remaining_amount, GREATEST(0, o.total - COALESCE(o.paid_amount, 0)))), 0) AS total_remaining
+        FROM orders o
+        WHERE o.order_status != "deleted"
+          AND (o.order_type IN ('booking', 'preorder', 'service') OR o.service_date IS NOT NULL)
+      `;
+      const params = [];
+
+      if (order_type && order_type !== 'all') {
+        sql += ' AND o.order_type = ?';
+        params.push(order_type);
+      }
+
+      // Branch RBAC / filter
+      if (req.user.role === 'kasir' || req.user.role === 'waiter') {
+        if (req.user.branch_id) {
+          sql += ' AND o.branch_id = ?';
+          params.push(req.user.branch_id);
+        }
+      } else if (branch_id && branch_id !== 'all') {
+        sql += ' AND o.branch_id = ?';
+        params.push(branch_id);
+      }
+
+      const [[stats]] = await db.query(sql, params);
+
+      res.json({
+        total: parseInt(stats.total || 0),
+        pending: parseInt(stats.pending || 0),
+        confirmed: parseInt(stats.confirmed || 0),
+        in_progress: parseInt(stats.in_progress || 0),
+        completed: parseInt(stats.completed || 0),
+        cancelled: parseInt(stats.cancelled || 0),
+        total_value: parseFloat(stats.total_value || 0),
+        total_paid: parseFloat(stats.total_paid || 0),
+        total_remaining: parseFloat(stats.total_remaining || 0),
+      });
+    } catch (error) {
+      console.error('Get services stats error:', error);
       res.status(500).json({ error: 'Server error' });
     }
   }
@@ -392,7 +474,16 @@ router.get('/:id',
         [orderId]
       );
 
-      res.json({ order: { ...orders[0], items } });
+      const [payments] = await db.query(
+        `SELECT op.*, u.name AS cashier_name
+         FROM order_payments op
+         LEFT JOIN users u ON op.cashier_id = u.id
+         WHERE op.order_id = ?
+         ORDER BY op.created_at ASC`,
+        [orderId]
+      );
+
+      res.json({ order: { ...orders[0], items, payments } });
     } catch (error) {
       console.error('Get order error:', error);
       res.status(500).json({ error: 'Server error' });
@@ -426,7 +517,12 @@ router.post('/',
     body('customer_phone').optional().trim(),
     body('table_number').optional().trim(),
     body('table_id').optional({ nullable: true }).isInt({ min: 1 }),
-    body('order_type').isIn(['dine-in', 'takeaway', 'delivery']).withMessage('Invalid order type'),
+    body('order_type').isIn(['dine-in', 'takeaway', 'delivery', 'booking', 'preorder', 'service']).withMessage('Invalid order type'),
+    body('service_date').optional({ nullable: true }),
+    body('service_time').optional({ nullable: true }),
+    body('service_person_count').optional({ nullable: true }),
+    body('service_status').optional({ nullable: true }),
+    body('dp_amount').optional({ nullable: true }).isFloat({ min: 0 }),
     body('payment_method').optional(),
     body('notes').optional().trim(),
     body('discount').optional().isFloat({ min: 0 }).withMessage('Discount must be a non-negative number'),
@@ -451,6 +547,10 @@ router.post('/',
         table_number,
         table_id,
         order_type,
+        service_date,
+        service_time,
+        service_person_count,
+        service_status,
         payment_method,
         notes,
         discount,
@@ -520,22 +620,51 @@ router.post('/',
       const orderNumber = await generateOrderNumber();
       const branchId = req.body.branch_id || req.user.branch_id || 1;
 
-      // If payment by balance — check & deduct
+      // Determine payment and DP breakdown
+      let dpAmountVal = parseFloat(req.body.dp_amount) || 0;
+      let paymentMethodVal = payment_method || null;
       let paymentStatusVal = 'pending';
-      if (payment_method === 'balance') {
+      let paidAmountVal = 0;
+      let remainingAmountVal = total;
+      let dpPaymentMethod = null;
+      let dpPaidAt = null;
+
+      const isPendingMethod = !paymentMethodVal ||
+        paymentMethodVal === 'pending' ||
+        paymentMethodVal === 'unpaid' ||
+        req.body.payment_status === 'pending' ||
+        req.body.payment_status === 'unpaid' ||
+        Boolean(req.body.is_pending);
+
+      if (!isPendingMethod) {
+        if (dpAmountVal > 0 && dpAmountVal < total) {
+          paymentStatusVal = 'partial';
+          paidAmountVal = dpAmountVal;
+          remainingAmountVal = parseFloat((total - dpAmountVal).toFixed(2));
+          dpPaymentMethod = paymentMethodVal;
+          dpPaidAt = new Date();
+        } else {
+          paymentStatusVal = 'paid';
+          paidAmountVal = total;
+          remainingAmountVal = 0;
+          dpAmountVal = 0;
+        }
+      }
+
+      // If payment by balance — check & deduct actual amount paid
+      if (paymentMethodVal === 'balance' && paidAmountVal > 0) {
         const [[actor]] = await db.query('SELECT id, balance FROM users WHERE id = ?', [req.user.id]);
-        if (!actor || parseFloat(actor.balance) < total) {
+        if (!actor || parseFloat(actor.balance) < paidAmountVal) {
           return res.status(400).json({ error: `Saldo tidak cukup. Saldo Anda: ${actor?.balance || 0}` });
         }
         const balBefore = parseFloat(actor.balance);
-        const balAfter = parseFloat((balBefore - total).toFixed(2));
+        const balAfter = parseFloat((balBefore - paidAmountVal).toFixed(2));
         await db.query('UPDATE users SET balance = ? WHERE id = ?', [balAfter, req.user.id]);
         await db.query(
           `INSERT INTO balance_transactions (user_id, type, amount, balance_before, balance_after, reference_type, note, created_by)
            VALUES (?, 'deduct', ?, ?, ?, 'order', ?, ?)`,
-          [req.user.id, total, balBefore, balAfter, `Pembayaran order ${orderNumber}`, req.user.id]
+          [req.user.id, paidAmountVal, balBefore, balAfter, `Pembayaran ${dpAmountVal > 0 ? 'DP ' : ''}order ${orderNumber}`, req.user.id]
         );
-        paymentStatusVal = 'paid';
       }
 
       // Auto-assign active shift for this user
@@ -548,12 +677,16 @@ router.post('/',
         activeShiftId = openShift?.id || null;
       } catch (_) {}
 
+      const effectiveServiceStatus = service_status || (['booking', 'preorder', 'service'].includes(order_type) ? 'pending' : null);
+
       const [orderResult] = await db.query(
         `INSERT INTO orders
           (order_number, customer_name, customer_email, customer_phone, table_number, table_id,
-           order_type, subtotal, tax, discount, total, payment_method, payment_status,
-           order_status, notes, served_by, branch_id, voucher_code, voucher_discount, shift_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+           order_type, subtotal, tax, discount, total, paid_amount, dp_amount, remaining_amount,
+           dp_payment_method, dp_paid_at, payment_method, payment_status,
+           order_status, notes, served_by, branch_id, voucher_code, voucher_discount, shift_id,
+           service_date, service_time, service_person_count, service_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderNumber,
           customer_name || null,
@@ -566,7 +699,12 @@ router.post('/',
           taxAmount,
           discountAmount,
           total,
-          payment_method,
+          paidAmountVal,
+          dpAmountVal,
+          remainingAmountVal,
+          dpPaymentMethod,
+          dpPaidAt,
+          paymentMethodVal,
           paymentStatusVal,
           notes || null,
           req.user.id,
@@ -574,10 +712,36 @@ router.post('/',
           appliedVoucherCode,
           voucherDiscount,
           activeShiftId,
+          service_date || null,
+          service_time || null,
+          service_person_count ? parseInt(service_person_count) : null,
+          effectiveServiceStatus,
         ]
       );
 
-      // Update shift running totals
+      const orderId = orderResult.insertId;
+
+      // Record payment into order_payments & update shift running totals
+      if (paidAmountVal > 0) {
+        try {
+          await db.query(
+            `INSERT INTO order_payments (order_id, payment_type, amount, payment_method, payment_status, notes, shift_id, cashier_id, created_at)
+             VALUES (?, ?, ?, ?, 'paid', ?, ?, ?, NOW())`,
+            [
+              orderId,
+              paymentStatusVal === 'partial' ? 'dp' : 'full',
+              paidAmountVal,
+              paymentMethodVal || 'cash',
+              paymentStatusVal === 'partial' ? 'Uang Muka / DP' : 'Pembayaran Penuh',
+              activeShiftId,
+              req.user.id,
+            ]
+          );
+        } catch (e) {
+          console.error('Record order_payment error:', e);
+        }
+      }
+
       if (activeShiftId) {
         try {
           await db.query(
@@ -586,12 +750,10 @@ router.post('/',
                total_revenue = total_revenue + ?,
                cash_revenue  = cash_revenue + ?
              WHERE id = ?`,
-            [total, payment_method === 'cash' ? total : 0, activeShiftId]
+            [paidAmountVal, paymentMethodVal === 'cash' ? paidAmountVal : 0, activeShiftId]
           );
         } catch (_) {}
       }
-
-      const orderId = orderResult.insertId;
 
       await insertOrderItems(orderId, resolvedItems);
 
@@ -617,10 +779,11 @@ router.post('/',
         } catch (_) {}
       }
 
-      // Deduct per-branch stock for each product ordered
+      // Deduct per-branch stock for each product ordered (skip services)
       if (branchId) {
         for (const item of resolvedItems) {
           if (!item.product_id) continue;
+          if (item.product_type === 'service') continue; // Services don't deduct physical stock
           const qty = parseInt(item.quantity || item.qty || 0);
           if (qty <= 0) continue;
           try {
@@ -668,6 +831,10 @@ router.post('/',
           tax: taxAmount,
           discount: discountAmount,
           total,
+          paid_amount: paidAmountVal,
+          dp_amount: dpAmountVal,
+          remaining_amount: remainingAmountVal,
+          payment_method: paymentMethodVal,
           payment_status: paymentStatusVal,
           voucher_code: appliedVoucherCode,
           voucher_discount: voucherDiscount,
@@ -785,6 +952,59 @@ router.put('/:id/status',
   }
 );
 
+// PUT /:id/service-status — admin/kasir/waiter update service order status
+router.put('/:id/service-status',
+  authenticate,
+  authorize('admin', 'kasir', 'waiter'),
+  sanitizeInput,
+  [
+    param('id').isInt({ min: 1 }).withMessage('Invalid order ID'),
+    body('service_status')
+      .isIn(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'])
+      .withMessage('Invalid service status'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const orderId = req.params.id;
+      const { service_status } = req.body;
+
+      const [orders] = await db.query(
+        'SELECT id, service_status, order_status FROM orders WHERE id = ?',
+        [orderId]
+      );
+      if (orders.length === 0) return res.status(404).json({ error: 'Order not found' });
+
+      await db.query(
+        'UPDATE orders SET service_status = ?, updated_at = NOW() WHERE id = ?',
+        [service_status, orderId]
+      );
+
+      // If service completed, optionally update order_status to completed if ready
+      if (service_status === 'completed') {
+        await db.query(
+          'UPDATE orders SET order_status = "completed" WHERE id = ? AND order_status IN ("pending", "preparing", "ready")',
+          [orderId]
+        );
+      } else if (service_status === 'cancelled') {
+        await db.query(
+          'UPDATE orders SET order_status = "cancelled" WHERE id = ?',
+          [orderId]
+        );
+      }
+
+      res.json({ message: 'Service status updated', service_status });
+    } catch (error) {
+      console.error('Update service status error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
 // PUT /:id/payment — admin/kasir
 router.put('/:id/payment',
   authenticate,
@@ -808,7 +1028,7 @@ router.put('/:id/payment',
       const { payment_status, payment_method } = req.body;
 
       const [orders] = await db.query(
-        'SELECT id, payment_status, payment_method, served_by, branch_id FROM orders WHERE id = ? AND order_status != "deleted"',
+        'SELECT id, order_number, total, paid_amount, remaining_amount, payment_status, payment_method, order_type, service_status, served_by, branch_id FROM orders WHERE id = ? AND order_status != "deleted"',
         [orderId]
       );
 
@@ -824,6 +1044,10 @@ router.put('/:id/payment',
       }
 
       const { cash_received, change_amount } = req.body;
+      const effectiveMethod = payment_method || order.payment_method || 'cash';
+      const currentPaid = parseFloat(order.paid_amount || 0);
+      const orderTotal = parseFloat(order.total || 0);
+      const toPay = parseFloat((orderTotal - currentPaid).toFixed(2));
 
       const updates = ['payment_status = ?'];
       const values = [payment_status];
@@ -833,10 +1057,19 @@ router.put('/:id/payment',
         values.push(payment_method);
       }
 
-      // Auto-complete order when payment is made
+      // If marked paid, update paid_amount and remaining_amount
       if (payment_status === 'paid') {
-        updates.push('order_status = ?');
-        values.push('completed');
+        updates.push('paid_amount = ?', 'remaining_amount = 0.00', 'settlement_payment_method = ?', 'settlement_paid_at = NOW()');
+        values.push(orderTotal, effectiveMethod);
+
+        // Auto-complete order when payment is made (unless it is a scheduled service/booking)
+        if (!['booking', 'preorder', 'service'].includes(order.order_type)) {
+          updates.push('order_status = ?');
+          values.push('completed');
+        } else if (order.service_status === 'pending') {
+          updates.push('service_status = ?');
+          values.push('confirmed');
+        }
       }
 
       if (cash_received != null) {
@@ -851,17 +1084,243 @@ router.put('/:id/payment',
       values.push(orderId);
       await db.query(`UPDATE orders SET ${updates.join(', ')} WHERE id = ?`, values);
 
+      // Record in order_payments and update shift if money was paid
+      if (payment_status === 'paid' && toPay > 0) {
+        let activeShiftId = null;
+        try {
+          const [[openShift]] = await db.query(
+            'SELECT id FROM shifts WHERE status = "open" AND opened_by = ? ORDER BY opened_at DESC LIMIT 1',
+            [req.user.id]
+          );
+          activeShiftId = openShift?.id || null;
+        } catch (_) {}
+
+        try {
+          await db.query(
+            `INSERT INTO order_payments (order_id, payment_type, amount, payment_method, payment_status, notes, shift_id, cashier_id, created_at)
+             VALUES (?, ?, ?, ?, 'paid', ?, ?, ?, NOW())`,
+            [
+              orderId,
+              currentPaid > 0 ? 'settlement' : 'full',
+              toPay,
+              effectiveMethod,
+              currentPaid > 0 ? 'Pelunasan Tagihan' : 'Pembayaran Penuh',
+              activeShiftId,
+              req.user.id
+            ]
+          );
+
+          if (activeShiftId) {
+            await db.query(
+              `UPDATE shifts SET
+                 total_revenue = total_revenue + ?,
+                 cash_revenue  = cash_revenue + ?
+               WHERE id = ?`,
+              [toPay, effectiveMethod === 'cash' ? toPay : 0, activeShiftId]
+            );
+          }
+        } catch (e) {
+          console.error('Record order_payment in payment update error:', e);
+        }
+      }
+
       await logActivity(
         req.user.id,
         'update_order_payment',
         orderId,
         { payment_status: order.payment_status, payment_method: order.payment_method },
-        { payment_status, payment_method: payment_method || order.payment_method }
+        { payment_status, payment_method: effectiveMethod }
       );
 
       res.json({ message: 'Payment updated', payment_status });
     } catch (error) {
       console.error('Update order payment error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// POST /:id/settle — Pelunasan sisa tagihan (DP settlement)
+router.post('/:id/settle',
+  authenticate,
+  authorize('admin', 'kasir'),
+  [
+    param('id').isInt({ min: 1 }).withMessage('Invalid order ID'),
+    body('payment_method').notEmpty().withMessage('Metode pembayaran wajib diisi'),
+    body('amount').optional({ nullable: true }).isFloat({ min: 1 }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+      const orderId = req.params.id;
+      let { payment_method, amount, notes } = req.body;
+
+      if (payment_method && !isNaN(Number(payment_method))) {
+        const [pmRows] = await db.query('SELECT code FROM payment_methods WHERE id = ?', [Number(payment_method)]);
+        if (pmRows.length > 0) payment_method = pmRows[0].code;
+      }
+
+      const [[order]] = await db.query(
+        'SELECT * FROM orders WHERE id = ? AND order_status != "deleted"',
+        [orderId]
+      );
+      if (!order) return res.status(404).json({ error: 'Order tidak ditemukan' });
+
+      // RBAC: kasir can only settle orders in their branch
+      if (req.user.role === 'kasir' && req.user.branch_id && order.branch_id !== req.user.branch_id) {
+        return res.status(403).json({ error: 'Access denied: not your branch' });
+      }
+
+      const currentRemaining = parseFloat(order.remaining_amount != null ? order.remaining_amount : order.total);
+      if (currentRemaining <= 0) {
+        return res.status(400).json({ error: 'Pesanan ini sudah lunas' });
+      }
+
+      let payAmount = amount != null ? parseFloat(amount) : currentRemaining;
+      if (payAmount <= 0) return res.status(400).json({ error: 'Nominal pembayaran tidak valid' });
+      if (payAmount > currentRemaining) {
+        payAmount = currentRemaining; // cap at remaining balance
+      }
+
+      // If payment by balance
+      if (payment_method === 'balance') {
+        const [[actor]] = await db.query('SELECT id, balance FROM users WHERE id = ?', [req.user.id]);
+        if (!actor || parseFloat(actor.balance) < payAmount) {
+          return res.status(400).json({ error: `Saldo tidak cukup. Saldo: ${actor?.balance || 0}` });
+        }
+        const balBefore = parseFloat(actor.balance);
+        const balAfter = parseFloat((balBefore - payAmount).toFixed(2));
+        await db.query('UPDATE users SET balance = ? WHERE id = ?', [balAfter, req.user.id]);
+        await db.query(
+          `INSERT INTO balance_transactions (user_id, type, amount, balance_before, balance_after, reference_type, note, created_by)
+           VALUES (?, 'deduct', ?, ?, ?, 'order', ?, ?)`,
+          [req.user.id, payAmount, balBefore, balAfter, `Pelunasan order #${order.order_number}`, req.user.id]
+        );
+      }
+
+      const newPaid = parseFloat((parseFloat(order.paid_amount || 0) + payAmount).toFixed(2));
+      const newRemaining = Math.max(0, parseFloat((order.total - newPaid).toFixed(2)));
+      const isFullyPaid = newRemaining <= 0.01;
+
+      // Find active shift for current cashier
+      let activeShiftId = null;
+      try {
+        const [[openShift]] = await db.query(
+          'SELECT id FROM shifts WHERE status = "open" AND opened_by = ? ORDER BY opened_at DESC LIMIT 1',
+          [req.user.id]
+        );
+        activeShiftId = openShift?.id || null;
+      } catch (_) {}
+
+      // Insert to order_payments
+      await db.query(
+        `INSERT INTO order_payments (order_id, payment_type, amount, payment_method, payment_status, notes, shift_id, cashier_id, created_at)
+         VALUES (?, 'settlement', ?, ?, 'paid', ?, ?, ?, NOW())`,
+        [orderId, payAmount, payment_method, notes || 'Pelunasan', activeShiftId, req.user.id]
+      );
+
+      // Update orders table
+      const orderUpdates = [
+        'paid_amount = ?',
+        'remaining_amount = ?',
+        'settlement_payment_method = ?',
+        'settlement_paid_at = NOW()',
+      ];
+      const orderParams = [newPaid, newRemaining, payment_method];
+
+      if (isFullyPaid) {
+        orderUpdates.push('payment_status = "paid"');
+        if (!['booking', 'preorder', 'service'].includes(order.order_type)) {
+          orderUpdates.push('order_status = "completed"');
+        } else if (order.service_status === 'pending') {
+          orderUpdates.push('service_status = "confirmed"');
+        }
+      } else {
+        orderUpdates.push('payment_status = "partial"');
+      }
+
+      await db.query(
+        `UPDATE orders SET ${orderUpdates.join(', ')} WHERE id = ?`,
+        [...orderParams, orderId]
+      );
+
+      // Increment active shift totals
+      if (activeShiftId) {
+        try {
+          await db.query(
+            `UPDATE shifts SET
+               total_revenue = total_revenue + ?,
+               cash_revenue  = cash_revenue + ?
+             WHERE id = ?`,
+            [payAmount, payment_method === 'cash' ? payAmount : 0, activeShiftId]
+          );
+        } catch (_) {}
+      }
+
+      await logActivity(
+        req.user.id,
+        'settle_order_payment',
+        orderId,
+        { paid_amount: order.paid_amount, remaining_amount: order.remaining_amount },
+        { paid_amount: newPaid, remaining_amount: newRemaining, payment_method, amount: payAmount }
+      );
+
+      const [[updatedOrder]] = await db.query('SELECT * FROM orders WHERE id = ?', [orderId]);
+      res.json({
+        success: true,
+        message: isFullyPaid ? 'Pesanan berhasil dilunasi' : `Pembayaran pelunasan sebesar Rp ${payAmount.toLocaleString('id')} berhasil dicatat`,
+        order: updatedOrder
+      });
+    } catch (error) {
+      console.error('Settle order payment error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// DELETE /:id/payments/:paymentId — admin only, hapus riwayat pembayaran
+router.delete('/:id/payments/:paymentId',
+  authenticate,
+  authorize('admin'),
+  async (req, res) => {
+    try {
+      const orderId = req.params.id;
+      const paymentId = req.params.paymentId;
+
+      const [[payment]] = await db.query('SELECT * FROM order_payments WHERE id = ? AND order_id = ?', [paymentId, orderId]);
+      if (!payment) return res.status(404).json({ error: 'Payment not found' });
+
+      await db.query('DELETE FROM order_payments WHERE id = ?', [paymentId]);
+
+      // Recalculate
+      const [[{ total_paid }]] = await db.query('SELECT SUM(amount) as total_paid FROM order_payments WHERE order_id = ?', [orderId]);
+      const [[order]] = await db.query('SELECT total FROM orders WHERE id = ?', [orderId]);
+      
+      const newPaid = parseFloat(total_paid || 0);
+      const newRemaining = Math.max(0, parseFloat((order.total - newPaid).toFixed(2)));
+      let paymentStatus = newPaid >= order.total ? 'paid' : (newPaid > 0 ? 'partial' : 'pending');
+      
+      await db.query(
+        'UPDATE orders SET paid_amount = ?, remaining_amount = ?, payment_status = ? WHERE id = ?',
+        [newPaid, newRemaining, paymentStatus, orderId]
+      );
+      
+      if (payment.shift_id) {
+         try {
+           await db.query(
+             'UPDATE shifts SET total_revenue = total_revenue - ?, cash_revenue = cash_revenue - ? WHERE id = ?',
+             [payment.amount, payment.payment_method === 'cash' ? payment.amount : 0, payment.shift_id]
+           );
+         } catch (_) {}
+      }
+
+      await logActivity(req.user.id, 'delete_order_payment', orderId, { payment_id: paymentId, amount: payment.amount }, {});
+
+      res.json({ success: true, message: 'Riwayat pembayaran berhasil dihapus' });
+    } catch (error) {
+      console.error('Delete payment error:', error);
       res.status(500).json({ error: 'Server error' });
     }
   }

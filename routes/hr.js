@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
+const { isDemoTenant } = require('../middleware/demoProtection');
 
 // ─── Middleware: cek hr enabled ──────────────────────────────
 async function hrEnabled(req, res, next) {
@@ -75,6 +76,26 @@ router.post('/employees', authenticate, authorize('admin'), hrEnabled, async (re
     if (!full_name) return res.status(400).json({ error: 'Nama lengkap wajib diisi' });
 
     let linkedUserId = user_id || null;
+
+    if (await isDemoTenant()) {
+      if (create_user_account) {
+        if (user_role === 'admin' || (email && (email.toLowerCase().startsWith('admin@') || email.toLowerCase().startsWith('owner@')))) {
+          return res.status(403).json({
+            error: 'Mode Demo Aktif',
+            message: 'Tidak dapat membuat akun admin utama pada demo kafe.',
+          });
+        }
+      }
+      if (linkedUserId) {
+        const [[linkedUser]] = await db.query('SELECT role, email FROM users WHERE id = ?', [linkedUserId]);
+        if (linkedUser && (linkedUser.role === 'admin' || linkedUser.email.toLowerCase().startsWith('admin@') || linkedUser.email.toLowerCase().startsWith('owner@'))) {
+          return res.status(403).json({
+            error: 'Mode Demo Aktif',
+            message: 'Tidak dapat menghubungkan karyawan ke akun admin utama pada demo kafe.',
+          });
+        }
+      }
+    }
 
     // Optionally create a linked user account in the same request
     if (create_user_account && email && password) {

@@ -132,6 +132,9 @@ router.put('/',
       const notFound = [];
 
       for (const item of settings) {
+        if (item.key === 'is_demo_tenant') {
+          continue; // Protected setting, only manageable via Superadmin Registry
+        }
         // Validate topup_enabled requires active payment methods
         if (item.key === 'topup_enabled' && String(item.value) === 'true') {
           const [[{ cnt }]] = await db.query(

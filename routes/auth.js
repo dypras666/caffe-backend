@@ -246,6 +246,14 @@ router.post('/change-password',
 
       const { currentPassword, newPassword } = req.body;
 
+      const { isDemoTenant } = require('../middleware/demoProtection');
+      if (await isDemoTenant()) {
+        return res.status(403).json({
+          error: 'Mode Demo Aktif',
+          message: 'Password akun demo dikunci demi kenyamanan bersama dan tidak dapat diubah.',
+        });
+      }
+
       // Get user with password
       const [users] = await db.query(
         'SELECT password FROM users WHERE id = ?',

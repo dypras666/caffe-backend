@@ -7,7 +7,7 @@ const multer = require('multer');
 let sharp; try { sharp = require('sharp'); } catch { sharp = null; }
 const { param, query, body, validationResult } = require('express-validator');
 const db = require('../config/database');
-const { authenticate, authorize, can } = require('../middleware/auth');
+const { authenticate, authorize, can, optionalAuth } = require('../middleware/auth');
 const storageService = require('../services/StorageService');
 const https = require('https');
 const http = require('http');
@@ -112,10 +112,9 @@ async function processAndSave(filename, tempPath, mimetype) {
   return { ...saved, mime_type: finalMime };
 }
 
-// GET / — list files
+// GET / — list files (publicly readable for galleries, supports optional auth)
 router.get('/',
-  authenticate,
-  authorize('admin'),
+  optionalAuth,
   [query('page').optional().isInt({ min: 1 }), query('limit').optional().isInt({ min: 1, max: 100 }), query('file_type').optional().trim(), query('search').optional().trim()],
   async (req, res) => {
     try {
@@ -158,7 +157,11 @@ router.get('/',
         return { ...f, url: finalUrl };
       }));
 
-      res.json({ files: filesWithUrl, pagination: { total, page, limit, total_pages: Math.ceil(total / limit) } });
+      res.json({
+        files: filesWithUrl,
+        media: filesWithUrl,
+        pagination: { total, page, limit, total_pages: Math.ceil(total / limit) }
+      });
     } catch (error) {
       console.error('Get media error:', error);
       res.status(500).json({ error: 'Server error' });
