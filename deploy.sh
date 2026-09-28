@@ -27,7 +27,7 @@ sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SERVER" "mkdir -p ${TEN
 cd /Users/azzura/development
 for proj in cafe-backend cafe-admin cafe-ui; do
     echo "Uploading $proj..."
-    tar --exclude='node_modules' --exclude='.git' --exclude='*.log' --exclude='dist' -czf - $proj/ | \
+    tar --exclude='node_modules' --exclude='.git' --exclude='*.log' --exclude='dist' --exclude='.env' -czf - $proj/ | \
         sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SERVER" "tar -xzf - -C ${TENANT_DIR}"
 done
 

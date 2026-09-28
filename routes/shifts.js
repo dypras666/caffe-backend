@@ -144,10 +144,19 @@ router.get('/current', authenticate, async (req, res) => {
   try {
     let query, params;
     if (req.user.role === 'admin') {
-      query = `SELECT s.*, u.name AS opened_by_name FROM shifts s
-               LEFT JOIN users u ON u.id = s.opened_by
-               WHERE s.status = 'open' ORDER BY s.opened_at DESC LIMIT 1`;
-      params = [];
+      const branchId = req.query.branch_id;
+      if (branchId && branchId !== 'all') {
+        query = `SELECT s.*, u.name AS opened_by_name FROM shifts s
+                 LEFT JOIN users u ON u.id = s.opened_by
+                 WHERE s.status = 'open' AND (s.branch_id = ? OR s.branch_id IS NULL)
+                 ORDER BY s.opened_at DESC LIMIT 1`;
+        params = [branchId];
+      } else {
+        query = `SELECT s.*, u.name AS opened_by_name FROM shifts s
+                 LEFT JOIN users u ON u.id = s.opened_by
+                 WHERE s.status = 'open' ORDER BY s.opened_at DESC LIMIT 1`;
+        params = [];
+      }
     } else {
       query = `SELECT s.*, u.name AS opened_by_name FROM shifts s
                LEFT JOIN users u ON u.id = s.opened_by
@@ -177,28 +186,38 @@ router.get('/current', authenticate, async (req, res) => {
 });
 
 // ─── POST /api/shifts/open — open a new shift ────────────────
-// body: { opening_cash, station_id?, notes }
+// body: { opening_cash, station_id?, notes, branch_id? }
 router.post('/open', authenticate, authorize('admin', 'kasir'), async (req, res) => {
-  const { opening_cash, station_id, notes } = req.body;
+  const { opening_cash, station_id, notes, branch_id } = req.body;
   if (opening_cash === undefined || opening_cash === null) {
     return res.status(400).json({ error: 'opening_cash wajib' });
   }
 
+  // Admin wajib pilih branch, kasir otomatis pakai branch-nya sendiri (di frontend/backend sudah diset)
+  const effectiveBranchId = req.user.role === 'admin' ? (branch_id || req.query.branch_id || null) : (req.user.branch_id || null);
+
   try {
-    // Prevent duplicate open shift for the same user
-    const [[existing]] = await db.query(
-      'SELECT id FROM shifts WHERE status = "open" AND opened_by = ?',
-      [req.user.id]
-    );
+    // Prevent duplicate open shift for the same user in the SAME branch
+    // Or if admin, they might have multiple shifts, but let's restrict to 1 per branch
+    let existingQuery = 'SELECT id FROM shifts WHERE status = "open" AND opened_by = ?';
+    let existingParams = [req.user.id];
+
+    if (effectiveBranchId && effectiveBranchId !== 'all') {
+       existingQuery += ' AND (branch_id = ? OR branch_id IS NULL)';
+       existingParams.push(effectiveBranchId);
+    }
+
+    const [[existing]] = await db.query(existingQuery, existingParams);
+    
     if (existing) {
       return res.status(409).json({ error: 'Sudah ada shift yang sedang berjalan', shift_id: existing.id });
     }
 
     const shiftNumber = await nextShiftNumber();
     const [r] = await db.query(
-      `INSERT INTO shifts (shift_number, user_id, opened_by, opening_cash, station_id, notes, status, opened_at, shift_date, start_time, end_time)
-       VALUES (?, ?, ?, ?, ?, ?, 'open', NOW(), CURDATE(), CURTIME(), CURTIME())`,
-      [shiftNumber, req.user.id, req.user.id, parseFloat(opening_cash), station_id || null, notes || null]
+      `INSERT INTO shifts (shift_number, user_id, opened_by, opening_cash, station_id, notes, status, opened_at, shift_date, start_time, end_time, branch_id)
+       VALUES (?, ?, ?, ?, ?, ?, 'open', NOW(), CURDATE(), CURTIME(), CURTIME(), ?)`,
+      [shiftNumber, req.user.id, req.user.id, parseFloat(opening_cash), station_id || null, notes || null, effectiveBranchId && effectiveBranchId !== 'all' ? effectiveBranchId : null]
     );
 
     await audit({

@@ -276,6 +276,12 @@ routeNames.forEach(name => {
   }
 });
 
+// ─── KIOSK (No Auth) ──────────────────────────────────────────
+try {
+  const { kioskRouter } = require('./routes/hr');
+  app.use('/api/kiosk', kioskRouter);
+} catch(e) { console.error('[route] Failed to load kiosk router:', e.message); }
+
 // ─── SYSTEM PING (no auth, for LAN discovery) ─────────────────
 app.get('/api/system/ping', async (req, res) => {
   let cafeName = 'Cafe Kasir';
@@ -310,6 +316,9 @@ app.post('/payment/callback/duitku', async (req, res) => {
 
 // ─── STATIC FILES ──────────────────────────────────────────────
 const publicDir = path.join(__dirname, 'public');
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+app.use('/uploads', express.static(uploadsDir));
 app.use('/admin', express.static(path.join(publicDir, 'admin')));
 app.use('/kasir', express.static(path.join(publicDir, 'kasir')));
 app.use('/assets', express.static(path.join(publicDir, 'assets')));
